@@ -13,25 +13,18 @@ from llm_parser import parse_health_input
 from task_client import (
     load_backlog, load_schedule, add_backlog_item,
     update_backlog_status, delete_backlog_item,
-    add_schedule_event, update_schedule_event, delete_schedule_event,
+    add_schedule_event, delete_schedule_event,
     PRIORITY_COLOR,
 )
 from task_parser import parse_task_input
 try:
-    from gcal_client import fetch_events, to_timed_calendar_events, get_allday_titles, get_calendar_id
+    from gcal_client import fetch_events, get_allday_titles, get_calendar_id
     _gcal_available = True
 except Exception:
     _gcal_available = False
     def fetch_events(*a, **kw): return []
-    def to_timed_calendar_events(*a, **kw): return []
     def get_allday_titles(*a, **kw): return []
     def get_calendar_id(): return None
-
-try:
-    from streamlit_calendar import calendar as st_calendar
-    _calendar_ok = True
-except ImportError:
-    _calendar_ok = False
 
 st.set_page_config(
     page_title="My Life Dashboard",
@@ -592,168 +585,143 @@ with tab_tasks:
         backlog_load_ok = False
         backlog_error = str(e)
 
-    if True:  # 常にレイアウトを表示
-        # ローカルスケジュールイベント
-        cal_events = []
-        if schedule_load_ok:
-            for _, row in schedule_df.iterrows():
-                if row["開始時刻"] and row["終了時刻"]:
-                    cal_events.append({
-                        "id": row["ID"],
-                        "title": row["タイトル"],
-                        "start": f"{row['日付']}T{row['開始時刻']}:00",
-                        "end": f"{row['日付']}T{row['終了時刻']}:00",
-                        "color": row.get("色", "#1976d2"),
+    # ローカルスケジュール → カード用リスト
+    local_events = []
+    if schedule_load_ok:
+        for _, row in schedule_df.iterrows():
+            if row["開始時刻"] and row["終了時刻"]:
+                local_events.append({
+                    "source": "local",
+                    "id": row["ID"],
+                    "title": row["タイトル"],
+                    "detail": row.get("詳細", ""),
+                    "start": row["開始時刻"],
+                    "end": row["終了時刻"],
+                    "color": row.get("色", "#1976d2"),
+                })
+
+    # Google Calendar → 終日リスト + 時刻付きカード用リスト
+    gcal_id = get_calendar_id()
+    gcal_error = None
+    gcal_allday = []
+    gcal_timed = []
+    if gcal_id:
+        try:
+            gcal_items = fetch_events(gcal_id, today_str)
+            gcal_allday = get_allday_titles(gcal_items)
+            for ev in gcal_items:
+                start_dt = ev.get("start", {}).get("dateTime")
+                end_dt   = ev.get("end",   {}).get("dateTime")
+                if start_dt:
+                    gcal_timed.append({
+                        "source": "gcal",
+                        "id": f"gcal_{ev.get('id', '')}",
+                        "title": ev.get("summary", "（タイトルなし）"),
+                        "detail": ev.get("description", ""),
+                        "start": start_dt[11:16],
+                        "end":   end_dt[11:16] if end_dt else start_dt[11:16],
+                        "color": "#0F9D58",
                     })
+        except Exception as e:
+            gcal_error = str(e)
 
-        # Google Calendarイベントを追加（設定済みの場合）
-        gcal_id = get_calendar_id()
-        gcal_error = None
-        gcal_allday = []
-        if gcal_id:
-            try:
-                gcal_items = fetch_events(gcal_id, today_str)
-                cal_events += to_timed_calendar_events(gcal_items)   # 時刻付きのみグリッドへ
-                gcal_allday = get_allday_titles(gcal_items)           # 終日予定はリストへ
-            except Exception as e:
-                gcal_error = str(e)
+    all_events = sorted(local_events + gcal_timed, key=lambda x: x["start"])
 
-        left_col, right_col = st.columns([6, 5], gap="medium")
+    left_col, right_col = st.columns([6, 5], gap="medium")
 
-        with left_col:
-            st.markdown("### 📅 本日のスケジュール")
-            if not schedule_load_ok:
-                st.warning(f"スケジュールデータの読み込みに失敗しました: {schedule_error}")
+    with left_col:
+        # ヘッダー
+        date_label = datetime.now(_JST).strftime("%-m月%-d日 (%a)")
+        gcal_badge = "　🟢 Google Calendar連携中" if (gcal_id and not gcal_error) else ""
+        st.markdown(f"### 📅 {date_label}{gcal_badge}")
 
-            # Google Calendar 診断表示
-            with st.expander("🔍 Google Calendar 接続状態", expanded=not bool(gcal_id)):
-                st.write(f"- ライブラリ読込: {'✅' if _gcal_available else '❌ 失敗（google-api-python-client をインストールしてください）'}")
-                st.write(f"- GOOGLE_CALENDAR_ID: `{gcal_id if gcal_id else '❌ 未設定（シークレットを確認してください）'}`")
-                if gcal_error:
-                    st.error(f"取得エラー: {gcal_error}")
-                elif gcal_id and not gcal_error:
-                    st.write(f"- イベント取得: ✅ {len([e for e in cal_events if e.get('id','').startswith('gcal_')])} 件")
+        if not schedule_load_ok:
+            st.warning(f"スケジュールデータの読み込みに失敗しました: {schedule_error}")
+        if gcal_error:
+            st.warning(f"Google Calendar 取得エラー: {gcal_error}")
 
-            if gcal_id and not gcal_error:
-                st.caption(
-                    f"{datetime.now(_JST).strftime('%Y年%m月%d日')}　"
-                    "🟢 Google Calendar連携中　青=ToDoスケジュール　緑=Googleカレンダー"
+        # 終日予定バナー
+        if gcal_allday:
+            st.info("📅 終日予定: " + "　/　".join(gcal_allday))
+
+        # ─── スケジュールカード ───
+        if not all_events:
+            st.markdown(
+                '<div style="text-align:center;color:#a0aec0;padding:40px 0;font-size:0.9rem;">本日の予定はありません</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            for ev in all_events:
+                bg    = "#f0fdf6" if ev["source"] == "gcal" else "#f5f7ff"
+                icon  = "📅" if ev["source"] == "gcal" else "📌"
+                detail_html = (
+                    f'<p style="margin:3px 0 0;font-size:0.78rem;color:#718096;">{ev["detail"]}</p>'
+                    if ev.get("detail") else ""
                 )
-                if gcal_allday:
-                    st.info("📅 終日予定: " + "　/　".join(gcal_allday))
-            else:
-                st.caption(f"{datetime.now(_JST).strftime('%Y年%m月%d日')}　イベントをドラッグして時間を変更できます")
-
-            if not _calendar_ok:
-                st.warning("streamlit-calendar が見つかりません。`pip install streamlit-calendar` を実行してください。")
-            else:
-                cal_options = {
-                    "initialView": "timeGridDay",
-                    "initialDate": today_str,
-                    "editable": True,
-                    "selectable": True,
-                    "headerToolbar": {
-                        "left": "prev,next today",
-                        "center": "title",
-                        "right": "timeGridDay,timeGridWeek",
-                    },
-                    "slotMinTime": "06:00:00",
-                    "slotMaxTime": "25:00:00",
-                    "height": 580,
-                    "locale": "ja",
-                    "allDaySlot": False,
-                    "nowIndicator": True,
-                    "slotLabelFormat": {"hour": "2-digit", "minute": "2-digit", "hour12": False},
-                    "eventTimeFormat": {"hour": "2-digit", "minute": "2-digit", "hour12": False},
-                }
-                cal_css = """
-                    /* グリッド線を薄く */
-                    .fc-timegrid-slot { border-color: #eef2f7 !important; }
-                    .fc-scrollgrid, .fc-scrollgrid td, .fc-scrollgrid th {
-                        border-color: #e2e8f0 !important;
-                    }
-                    /* ヘッダーをやわらかく */
-                    .fc-col-header-cell {
-                        background: #f7f9fc !important;
-                        padding: 8px 0 !important;
-                        font-weight: 600 !important;
-                        color: #4a5568 !important;
-                        border-color: #e2e8f0 !important;
-                    }
-                    .fc-toolbar-title {
-                        font-size: 1.1rem !important;
-                        font-weight: 600 !important;
-                        color: #2d3748 !important;
-                    }
-                    /* 時刻ラベルを細く薄く */
-                    .fc-timegrid-axis-cushion, .fc-timegrid-slot-label-cushion {
-                        font-size: 0.72rem !important;
-                        color: #a0aec0 !important;
-                    }
-                    /* イベントを丸くシャドウ付き */
-                    .fc-timegrid-event {
-                        border-radius: 10px !important;
-                        border: none !important;
-                        box-shadow: 0 2px 8px rgba(0,0,0,0.10) !important;
-                        padding: 2px 6px !important;
-                    }
-                    .fc-event-title { font-size: 0.8rem !important; font-weight: 500 !important; }
-                    .fc-event-time  { font-size: 0.7rem !important; opacity: 0.85 !important; }
-                    /* 現在時刻インジケーター */
-                    .fc-timegrid-now-indicator-line {
-                        border-color: #f56565 !important;
-                        border-width: 2px !important;
-                    }
-                    .fc-timegrid-now-indicator-arrow { border-top-color: #f56565 !important; }
-                    /* 今日の列を薄く色付け */
-                    .fc-day-today { background: #f0f7ff !important; }
-                    /* ボタン類 */
-                    .fc-button {
-                        background: #edf2f7 !important;
-                        border: none !important;
-                        color: #4a5568 !important;
-                        border-radius: 6px !important;
-                        font-size: 0.8rem !important;
-                        box-shadow: none !important;
-                    }
-                    .fc-button:hover { background: #e2e8f0 !important; }
-                    .fc-button-active { background: #667eea !important; color: #fff !important; }
-                """
-                cal_state = st_calendar(events=cal_events, options=cal_options, custom_css=cal_css, key="task_calendar_v4")
-
-                if cal_state and cal_state.get("callback"):
-                    cb = cal_state["callback"]
-                    if cb == "eventChange":
-                        changed = cal_state["eventChange"]["event"]
-                        eid = changed.get("id", "")
-                        new_start = changed.get("start", "")
-                        new_end = changed.get("end", "")
-                        if eid and new_start:
-                            new_date = new_start[:10]
-                            start_t = new_start[11:16] if len(new_start) > 15 else ""
-                            end_t = new_end[11:16] if len(new_end) > 15 else ""
-                            update_schedule_event(eid, {"日付": new_date, "開始時刻": start_t, "終了時刻": end_t})
+                card_html = f"""
+<div style="
+    border-left:4px solid {ev['color']};
+    background:{bg};
+    border-radius:0 10px 10px 0;
+    padding:10px 14px;
+    margin:5px 0;
+    box-shadow:0 1px 4px rgba(0,0,0,0.06);
+">
+  <span style="font-size:0.72rem;color:#718096;font-weight:500;letter-spacing:.3px;">
+    {ev['start']} – {ev['end']}
+  </span>
+  <p style="margin:3px 0 0;font-size:0.88rem;font-weight:600;color:#2d3748;">
+    {icon} {ev['title']}
+  </p>
+  {detail_html}
+</div>"""
+                if ev["source"] == "local":
+                    c_card, c_btn = st.columns([11, 1])
+                    with c_card:
+                        st.markdown(card_html, unsafe_allow_html=True)
+                    with c_btn:
+                        st.markdown("<div style='padding-top:14px'>", unsafe_allow_html=True)
+                        if st.button("🗑", key=f"del_sched_{ev['id']}", help="削除"):
+                            delete_schedule_event(ev["id"])
+                            load_schedule.clear()
                             st.rerun()
-                    elif cb == "eventClick":
-                        clicked = cal_state["eventClick"]["event"]
-                        st.session_state.clicked_event_id = clicked.get("id")
-                        st.session_state.clicked_event_title = clicked.get("title", "")
+                        st.markdown("</div>", unsafe_allow_html=True)
+                else:
+                    st.markdown(card_html, unsafe_allow_html=True)
 
-            if st.session_state.clicked_event_id:
-                with st.container(border=True):
-                    st.markdown(f"**選択中:** {st.session_state.clicked_event_title}")
-                    ec1, ec2 = st.columns(2)
-                    with ec1:
-                        if st.button("🗑️ このイベントを削除", key="del_event", type="primary", use_container_width=True):
-                            delete_schedule_event(st.session_state.clicked_event_id)
-                            st.session_state.clicked_event_id = None
-                            st.session_state.clicked_event_title = None
-                            st.rerun()
-                    with ec2:
-                        if st.button("✕ 閉じる", key="close_event", use_container_width=True):
-                            st.session_state.clicked_event_id = None
-                            st.session_state.clicked_event_title = None
-                            st.rerun()
+        # ─── スケジュール追加フォーム ───
+        st.markdown("<div style='margin-top:12px'>", unsafe_allow_html=True)
+        with st.expander("➕ スケジュールに追加"):
+            with st.form("add_sched_form", clear_on_submit=True):
+                sched_title = st.text_input("タイトル", placeholder="例：数学の授業")
+                cs, ce = st.columns(2)
+                with cs:
+                    sched_start = st.time_input("開始", value=dt_time(9, 0), step=1800)
+                with ce:
+                    sched_end = st.time_input("終了", value=dt_time(10, 0), step=1800)
+                sched_detail = st.text_input("詳細（任意）", placeholder="")
+                if st.form_submit_button("追加する", use_container_width=True):
+                    if sched_title:
+                        add_schedule_event({
+                            "タイトル": sched_title,
+                            "詳細": sched_detail,
+                            "日付": today_str,
+                            "開始時刻": sched_start.strftime("%H:%M"),
+                            "終了時刻": sched_end.strftime("%H:%M"),
+                        })
+                        st.rerun()
+                    else:
+                        st.warning("タイトルを入力してください")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # GCal 診断（折りたたみ）
+        with st.expander("🔍 Google Calendar 接続状態", expanded=False):
+            st.write(f"- ライブラリ読込: {'✅' if _gcal_available else '❌'}")
+            st.write(f"- GOOGLE_CALENDAR_ID: `{gcal_id or '未設定'}`")
+            if gcal_error:
+                st.error(gcal_error)
+            elif gcal_id:
+                st.write(f"- 時刻付き予定: {len(gcal_timed)} 件 / 終日予定: {len(gcal_allday)} 件")
 
         with right_col:
             st.markdown("### 📝 バックログ")
