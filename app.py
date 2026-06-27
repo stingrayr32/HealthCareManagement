@@ -619,13 +619,21 @@ with tab_tasks:
             st.markdown("### 📅 本日のスケジュール")
             if not schedule_load_ok:
                 st.warning(f"スケジュールデータの読み込みに失敗しました: {schedule_error}")
-            if gcal_id:
+
+            # Google Calendar 診断表示
+            with st.expander("🔍 Google Calendar 接続状態", expanded=not bool(gcal_id)):
+                st.write(f"- ライブラリ読込: {'✅' if _gcal_available else '❌ 失敗（google-api-python-client をインストールしてください）'}")
+                st.write(f"- GOOGLE_CALENDAR_ID: `{gcal_id if gcal_id else '❌ 未設定（シークレットを確認してください）'}`")
+                if gcal_error:
+                    st.error(f"取得エラー: {gcal_error}")
+                elif gcal_id and not gcal_error:
+                    st.write(f"- イベント取得: ✅ {len([e for e in cal_events if e.get('id','').startswith('gcal_')])} 件")
+
+            if gcal_id and not gcal_error:
                 st.caption(
                     f"{date.today().strftime('%Y年%m月%d日')}　"
                     "🟢 Google Calendar連携中　青=ToDoスケジュール　緑=Googleカレンダー"
                 )
-                if gcal_error:
-                    st.warning(f"Google Calendar の取得に失敗しました: {gcal_error}")
             else:
                 st.caption(f"{date.today().strftime('%Y年%m月%d日')}　イベントをドラッグして時間を変更できます")
 
