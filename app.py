@@ -652,31 +652,54 @@ with tab_tasks:
             )
         else:
             for ev in all_events:
-                bg    = "#f0fdf6" if ev["source"] == "gcal" else "#f5f7ff"
-                icon  = "📅" if ev["source"] == "gcal" else "📌"
+                done_key = f"sched_done_{ev['id']}"
+                if done_key not in st.session_state:
+                    st.session_state[done_key] = False
+                is_done = st.session_state[done_key]
+
+                if is_done:
+                    bg, border_color, title_style, time_style = (
+                        "#f4f4f4", "#cbd5e0",
+                        "color:#b0b8c1;text-decoration:line-through;",
+                        "color:#c0c8d0;",
+                    )
+                    icon = "✅"
+                else:
+                    bg           = "#f0fdf6" if ev["source"] == "gcal" else "#f5f7ff"
+                    border_color = ev["color"]
+                    title_style  = "color:#2d3748;"
+                    time_style   = "color:#718096;"
+                    icon         = "📅" if ev["source"] == "gcal" else "📌"
+
                 detail_html = (
-                    f'<p style="margin:3px 0 0;font-size:0.78rem;color:#718096;">{ev["detail"]}</p>'
-                    if ev.get("detail") else ""
+                    f'<p style="margin:3px 0 0;font-size:0.78rem;{time_style}">{ev["detail"]}</p>'
+                    if ev.get("detail") and not is_done else ""
                 )
                 card_html = f"""
 <div style="
-    border-left:4px solid {ev['color']};
+    border-left:4px solid {border_color};
     background:{bg};
     border-radius:0 10px 10px 0;
     padding:10px 14px;
     margin:5px 0;
-    box-shadow:0 1px 4px rgba(0,0,0,0.06);
+    box-shadow:0 1px 4px rgba(0,0,0,0.04);
+    transition:all .2s;
 ">
-  <span style="font-size:0.72rem;color:#718096;font-weight:500;letter-spacing:.3px;">
+  <span style="font-size:0.72rem;font-weight:500;letter-spacing:.3px;{time_style}">
     {ev['start']} – {ev['end']}
   </span>
-  <p style="margin:3px 0 0;font-size:0.88rem;font-weight:600;color:#2d3748;">
+  <p style="margin:3px 0 0;font-size:0.88rem;font-weight:600;{title_style}">
     {icon} {ev['title']}
   </p>
   {detail_html}
 </div>"""
+
                 if ev["source"] == "local":
-                    c_card, c_btn = st.columns([11, 1])
+                    c_chk, c_card, c_btn = st.columns([1, 10, 1])
+                    with c_chk:
+                        st.markdown("<div style='padding-top:16px'>", unsafe_allow_html=True)
+                        st.checkbox("", key=done_key, label_visibility="collapsed")
+                        st.markdown("</div>", unsafe_allow_html=True)
                     with c_card:
                         st.markdown(card_html, unsafe_allow_html=True)
                     with c_btn:
@@ -687,7 +710,13 @@ with tab_tasks:
                             st.rerun()
                         st.markdown("</div>", unsafe_allow_html=True)
                 else:
-                    st.markdown(card_html, unsafe_allow_html=True)
+                    c_chk, c_card = st.columns([1, 11])
+                    with c_chk:
+                        st.markdown("<div style='padding-top:16px'>", unsafe_allow_html=True)
+                        st.checkbox("", key=done_key, label_visibility="collapsed")
+                        st.markdown("</div>", unsafe_allow_html=True)
+                    with c_card:
+                        st.markdown(card_html, unsafe_allow_html=True)
 
         # ─── スケジュール追加フォーム ───
         st.markdown("<div style='margin-top:12px'>", unsafe_allow_html=True)
