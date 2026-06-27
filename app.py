@@ -52,6 +52,13 @@ with st.sidebar:
         bmi_warn = "⚠️ 肥満域"
     st.caption(f"BMI: {target_bmi:.1f}　{bmi_warn}")
 
+    st.divider()
+    st.header("🍽️ 摂取目標設定")
+    cal_min = st.number_input("カロリー下限 (kcal)", min_value=0, max_value=5000, value=1600, step=50)
+    cal_max = st.number_input("カロリー上限 (kcal)", min_value=0, max_value=5000, value=2160, step=50)
+    protein_min = st.number_input("タンパク質下限 (g)", min_value=0, max_value=300, value=60, step=5)
+    protein_max = st.number_input("タンパク質上限 (g)", min_value=0, max_value=300, value=120, step=5)
+
     api_key = st.secrets.get("ANTHROPIC_API_KEY", "")
 
 tab_dashboard, tab_input = st.tabs(["📊 ダッシュボード", "📝 データ入力"])
@@ -192,34 +199,62 @@ with tab_dashboard:
             st.plotly_chart(fig_weight, use_container_width=True)
 
             # --- 本日のカロリー・PFC ---
+            def _colored_card(label, value_str, color, status):
+                return f"""<div style="text-align:center;padding:4px 2px">
+<div style="font-size:0.75em;color:#888;margin-bottom:2px">{label}</div>
+<div style="font-size:1.3em;font-weight:bold;color:{color}">{value_str}</div>
+<div style="font-size:0.72em;color:{color};margin-top:1px">{status}</div>
+</div>"""
+
             today_str = pd.Timestamp.today().normalize()
             today_rows = df[df["日付"] == today_str]
             if not today_rows.empty:
                 t = today_rows.iloc[-1]
                 st.subheader("🗓️ 本日の摂取状況")
                 tc1, tc2, tc3, tc4, tc5, tc6, tc7 = st.columns(7)
-                CALORIE_LIMIT_TODAY = 2160
+
+                def cal_status(val):
+                    if val is None:
+                        return "gray", "-", "未記録"
+                    if val < cal_min:
+                        return "#e53935", f"{val:.0f}", f"不足 ({val - cal_min:.0f})"
+                    if val > cal_max:
+                        return "#e53935", f"{val:.0f}", f"超過 (+{val - cal_max:.0f})"
+                    return "#43a047", f"{val:.0f}", "目標内 ✓"
+
+                def protein_status(val):
+                    if val is None:
+                        return "gray", "-", "未記録"
+                    if val < protein_min:
+                        return "#e53935", f"{val:.0f}", f"不足 ({val - protein_min:.0f})"
+                    if val > protein_max:
+                        return "#e53935", f"{val:.0f}", f"超過 (+{val - protein_max:.0f})"
+                    return "#43a047", f"{val:.0f}", "目標内 ✓"
+
                 cal_val = t["総カロリー"] if pd.notna(t["総カロリー"]) else None
+                c, v, s = cal_status(cal_val)
                 with tc1:
-                    st.metric(
-                        "総Cal",
-                        f"{cal_val:.0f}" if cal_val is not None else "-",
-                        delta=f"{cal_val - CALORIE_LIMIT_TODAY:+.0f}" if cal_val is not None else None,
-                        delta_color="inverse",
-                        help="総カロリー (kcal)",
-                    )
+                    st.markdown(_colored_card("総Cal (kcal)", v, c, s), unsafe_allow_html=True)
                 with tc2:
-                    st.metric("朝食", f"{t['朝食Cal']:.0f}" if pd.notna(t["朝食Cal"]) else "-", help="朝食カロリー (kcal)")
+                    v2 = f"{t['朝食Cal']:.0f}" if pd.notna(t["朝食Cal"]) else "-"
+                    st.markdown(_colored_card("朝食 (kcal)", v2, "#1976d2", ""), unsafe_allow_html=True)
                 with tc3:
-                    st.metric("昼食", f"{t['昼食Cal']:.0f}" if pd.notna(t["昼食Cal"]) else "-", help="昼食カロリー (kcal)")
+                    v3 = f"{t['昼食Cal']:.0f}" if pd.notna(t["昼食Cal"]) else "-"
+                    st.markdown(_colored_card("昼食 (kcal)", v3, "#1976d2", ""), unsafe_allow_html=True)
                 with tc4:
-                    st.metric("夕食", f"{t['夕食Cal']:.0f}" if pd.notna(t["夕食Cal"]) else "-", help="夕食カロリー (kcal)")
+                    v4 = f"{t['夕食Cal']:.0f}" if pd.notna(t["夕食Cal"]) else "-"
+                    st.markdown(_colored_card("夕食 (kcal)", v4, "#1976d2", ""), unsafe_allow_html=True)
+
+                p_val = t["総タンパク質"] if pd.notna(t["総タンパク質"]) else None
+                cp, vp, sp = protein_status(p_val)
                 with tc5:
-                    st.metric("P (g)", f"{t['総タンパク質']:.0f}" if pd.notna(t["総タンパク質"]) else "-", help="タンパク質 (g)")
+                    st.markdown(_colored_card("タンパク質 (g)", vp, cp, sp), unsafe_allow_html=True)
                 with tc6:
-                    st.metric("F (g)", f"{t['総脂質']:.0f}" if pd.notna(t["総脂質"]) else "-", help="脂質 (g)")
+                    vf = f"{t['総脂質']:.0f}" if pd.notna(t["総脂質"]) else "-"
+                    st.markdown(_colored_card("脂質 (g)", vf, "#1976d2", ""), unsafe_allow_html=True)
                 with tc7:
-                    st.metric("C (g)", f"{t['総炭水化物']:.0f}" if pd.notna(t["総炭水化物"]) else "-", help="炭水化物 (g)")
+                    vc = f"{t['総炭水化物']:.0f}" if pd.notna(t["総炭水化物"]) else "-"
+                    st.markdown(_colored_card("炭水化物 (g)", vc, "#1976d2", ""), unsafe_allow_html=True)
 
             # --- グラフ2: カロリー摂取の内訳 ---
             CALORIE_LIMIT = 2160
