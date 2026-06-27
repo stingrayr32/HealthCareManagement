@@ -718,16 +718,17 @@ with tab_tasks:
     local_events = []
     if schedule_load_ok:
         for _, row in schedule_df.iterrows():
-            if row["開始時刻"] and row["終了時刻"]:
-                local_events.append({
-                    "source": "local",
-                    "id": row["ID"],
-                    "title": row["タイトル"],
-                    "detail": row.get("詳細", ""),
-                    "start": row["開始時刻"],
-                    "end": row["終了時刻"],
-                    "color": row.get("色", "#1976d2"),
-                })
+            has_time = bool(row.get("開始時刻")) and bool(row.get("終了時刻"))
+            local_events.append({
+                "source": "local",
+                "id": row["ID"],
+                "title": row["タイトル"],
+                "detail": row.get("詳細", ""),
+                "start": row["開始時刻"] if has_time else "",
+                "end": row["終了時刻"] if has_time else "",
+                "has_time": has_time,
+                "color": row.get("色", "#1976d2"),
+            })
 
     # Google Calendar → 終日リスト + 時刻付きカード用リスト
     gcal_id = get_calendar_id()
@@ -754,7 +755,9 @@ with tab_tasks:
         except Exception as e:
             gcal_error = str(e)
 
-    all_events = sorted(local_events + gcal_timed, key=lambda x: x["start"])
+    untimed_tasks = [ev for ev in local_events if not ev.get("has_time")]
+    timed_local   = [ev for ev in local_events if ev.get("has_time")]
+    all_events    = sorted(timed_local + gcal_timed, key=lambda x: x["start"])
 
     left_col, right_col = st.columns([6, 5], gap="medium")
 
@@ -773,13 +776,50 @@ with tab_tasks:
         if gcal_allday:
             st.info("📅 終日予定: " + "　/　".join(gcal_allday))
 
-        # ─── スケジュールカード ───
-        if not all_events:
+        # ─── 時刻未定タスク ───
+        if untimed_tasks:
+            st.markdown("**📌 本日のタスク**")
+            for ev in untimed_tasks:
+                done_key = f"sched_done_{ev['id']}"
+                if done_key not in st.session_state:
+                    st.session_state[done_key] = False
+                is_done = st.session_state[done_key]
+                title_style = "color:#b0b8c1;text-decoration:line-through;" if is_done else "color:#2d3748;font-weight:600;"
+                task_html = f"""
+<div style="
+    border-left:4px solid {'#cbd5e0' if is_done else ev['color']};
+    background:{'#f4f4f4' if is_done else '#fafafa'};
+    border-radius:0 8px 8px 0;
+    padding:8px 12px;
+    margin:4px 0;
+    box-shadow:0 1px 3px rgba(0,0,0,0.04);
+">
+  <span style="font-size:0.88rem;{title_style}">{'✅ ' if is_done else '📌 '}{ev['title']}</span>
+</div>"""
+                tc_chk, tc_card, tc_btn = st.columns([1, 10, 1])
+                with tc_chk:
+                    st.markdown("<div style='padding-top:12px'>", unsafe_allow_html=True)
+                    st.checkbox("", key=done_key, label_visibility="collapsed")
+                    st.markdown("</div>", unsafe_allow_html=True)
+                with tc_card:
+                    st.markdown(task_html, unsafe_allow_html=True)
+                with tc_btn:
+                    st.markdown("<div style='padding-top:10px'>", unsafe_allow_html=True)
+                    if st.button("🗑", key=f"del_sched_{ev['id']}", help="削除"):
+                        delete_schedule_event(ev["id"])
+                        load_schedule.clear()
+                        st.rerun()
+                    st.markdown("</div>", unsafe_allow_html=True)
+
+        # ─── 時刻付きスケジュールカード ───
+        if not all_events and not untimed_tasks:
             st.markdown(
                 '<div style="text-align:center;color:#a0aec0;padding:40px 0;font-size:0.9rem;">本日の予定はありません</div>',
                 unsafe_allow_html=True,
             )
-        else:
+        elif all_events:
+            if untimed_tasks:
+                st.markdown("**🕐 スケジュール**")
             for ev in all_events:
                 done_key = f"sched_done_{ev['id']}"
                 if done_key not in st.session_state:
@@ -905,9 +945,17 @@ with tab_tasks:
                         with btn_col:
                             b1, b2, b3 = st.columns(3)
                             with b1:
-                                if st.button("📅", key=f"sched_{item['ID']}", help="スケジュールに追加", use_container_width=True):
-                                    st.session_state.scheduling_item = item.to_dict()
-                                    schedule_from_backlog_dialog()
+                                if st.button("📅", key=f"sched_{item['ID']}", help="本日のスケジュールに追加", use_container_width=True):
+                                    add_schedule_event({
+                                        "タイトル": item["タイトル"],
+                                        "詳細": item.get("詳細", ""),
+                                        "日付": today_str,
+                                        "開始時刻": "",
+                                        "終了時刻": "",
+                                        "バックログID": item["ID"],
+                                    })
+                                    st.toast(f"📌 「{item['タイトル']}」を本日のスケジュールに追加しました")
+                                    st.rerun()
                             with b2:
                                 if not is_done:
                                     if st.button("✅", key=f"done_{item['ID']}", help="完了にする", use_container_width=True):
@@ -918,9 +966,6 @@ with tab_tasks:
                                     delete_backlog_item(item["ID"])
                                     st.rerun()
 
-            if st.session_state.get("scheduling_item") and not st.session_state.get("_sched_dialog_open"):
-                st.session_state._sched_dialog_open = True
-                schedule_from_backlog_dialog()
 
 # =====================
 # バージョン情報タブ
