@@ -654,7 +654,7 @@ with tab_tasks:
                     "slotMaxTime": "25:00:00",
                     "height": 580,
                     "locale": "ja",
-                    "allDaySlot": True,
+                    "allDaySlot": False,
                 }
                 cal_state = st_calendar(events=cal_events, options=cal_options, key="task_calendar")
 

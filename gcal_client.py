@@ -45,22 +45,25 @@ def to_calendar_events(items: list[dict]) -> list[dict]:
     for ev in items:
         start = ev.get("start", {})
         end = ev.get("end", {})
-        # dateTime があれば時刻付き予定、なければ終日予定
         start_dt = start.get("dateTime")
         end_dt = end.get("dateTime")
-        is_all_day = start_dt is None
-        start_str = start_dt if start_dt else start.get("date", "")
-        end_str = end_dt if end_dt else end.get("date", "")
-        event = {
+        if start_dt:
+            # 時刻付き予定: タイムゾーンオフセットを除去してローカル時刻として扱う
+            start_str = start_dt[:19]
+            end_str = end_dt[:19] if end_dt else start_str
+        else:
+            # 終日予定: timeGridに表示するため終日ブロックに変換
+            date_str = start.get("date", "")
+            start_str = f"{date_str}T00:00:00"
+            end_str = f"{date_str}T23:59:59"
+        events.append({
             "id": f"gcal_{ev.get('id', '')}",
             "title": "📅 " + ev.get("summary", "（タイトルなし）"),
             "start": start_str,
             "end": end_str,
             "color": "#0F9D58",
             "editable": False,
-            "allDay": is_all_day,
-        }
-        events.append(event)
+        })
     return events
 
 
