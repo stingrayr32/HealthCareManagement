@@ -15,6 +15,7 @@ from task_client import (
     PRIORITY_COLOR,
 )
 from task_parser import parse_task_input
+from gcal_client import fetch_events, to_calendar_events, get_calendar_id
 
 try:
     from streamlit_calendar import calendar as st_calendar
@@ -56,7 +57,7 @@ def save_config(cfg: dict) -> None:
         json.dump(cfg, f, ensure_ascii=False, indent=2)
 
 
-APP_VERSION = "1.5.0"
+APP_VERSION = "1.6.0"
 
 if "config" not in st.session_state:
     st.session_state.config = load_config()
@@ -171,7 +172,7 @@ with st.sidebar:
 
 st.title("🌟 My Life Dashboard")
 
-tab_dashboard, tab_tasks, tab_info = st.tabs(["📊 ダッシュボード", "📋 タスク管理", "ℹ️ バージョン情報"])
+tab_dashboard, tab_tasks, tab_info = st.tabs(["🏃 Health", "📋 ToDo", "ℹ️ バージョン情報"])
 
 # =====================
 # ダッシュボードタブ
@@ -573,6 +574,7 @@ with tab_tasks:
         task_load_ok = False
 
     if task_load_ok:
+        # ローカルスケジュールイベント
         cal_events = []
         for _, row in schedule_df.iterrows():
             if row["開始時刻"] and row["終了時刻"]:
@@ -584,11 +586,29 @@ with tab_tasks:
                     "color": row.get("色", "#1976d2"),
                 })
 
+        # Google Calendarイベントを追加（設定済みの場合）
+        gcal_id = get_calendar_id()
+        gcal_error = None
+        if gcal_id:
+            try:
+                gcal_items = fetch_events(gcal_id, today_str)
+                cal_events += to_calendar_events(gcal_items)
+            except Exception as e:
+                gcal_error = str(e)
+
         left_col, right_col = st.columns([6, 5], gap="medium")
 
         with left_col:
             st.markdown("### 📅 本日のスケジュール")
-            st.caption(f"{date.today().strftime('%Y年%m月%d日')}　イベントをドラッグして時間を変更できます")
+            if gcal_id:
+                st.caption(
+                    f"{date.today().strftime('%Y年%m月%d日')}　"
+                    "🟢 Google Calendar連携中　青=ToDoスケジュール　緑=Googleカレンダー"
+                )
+                if gcal_error:
+                    st.warning(f"Google Calendar の取得に失敗しました: {gcal_error}")
+            else:
+                st.caption(f"{date.today().strftime('%Y年%m月%d日')}　イベントをドラッグして時間を変更できます")
 
             if not _calendar_ok:
                 st.warning("streamlit-calendar が見つかりません。`pip install streamlit-calendar` を実行してください。")
@@ -796,6 +816,7 @@ with tab_info:
     st.divider()
     st.markdown("### 更新履歴")
     history = [
+        ("1.6.0", "2026-06-27", "タブ名をHealth/ToDoに変更、Google Calendar連携機能を追加"),
         ("1.5.0", "2026-06-27", "アプリ名を「My Life Dashboard」に変更、データ入力をダッシュボードタブに統合"),
         ("1.4.0", "2026-06-27", "タスク管理ページ追加：バックログ管理・日次スケジュール・Claude AIタスク入力"),
         ("1.3.0", "2026-06-27", "摂取目標ダイアログのレイアウト改善、脂質・炭水化物の目標設定を追加"),
