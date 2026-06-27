@@ -945,16 +945,52 @@ with tab_tasks:
                         with btn_col:
                             b1, b2, b3 = st.columns(3)
                             with b1:
-                                if st.button("📅", key=f"sched_{item['ID']}", help="本日のスケジュールに追加", use_container_width=True):
+                                if st.button("📅", key=f"sched_{item['ID']}", help="本日のスケジュールに自動追加", use_container_width=True):
+                                    # 見積時間（分）取得、未設定は60分
+                                    try:
+                                        duration = max(1, int(float(str(item.get("推定時間", "") or 60))))
+                                    except (ValueError, TypeError):
+                                        duration = 60
+
+                                    # 現時刻の次の整時を開始候補とする
+                                    jst_now = datetime.now(_JST)
+                                    slot_start = jst_now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+                                    slot_end   = slot_start + timedelta(minutes=duration)
+
+                                    # 既存の時刻付き予定を datetime に変換
+                                    def _to_dt(t_str):
+                                        try:
+                                            h, m = map(int, t_str.split(":"))
+                                            return jst_now.replace(hour=h, minute=m, second=0, microsecond=0)
+                                        except Exception:
+                                            return None
+
+                                    occupied = sorted([
+                                        (_to_dt(ev["start"]), _to_dt(ev["end"]))
+                                        for ev in all_events
+                                        if _to_dt(ev.get("start", "")) and _to_dt(ev.get("end", ""))
+                                    ])
+
+                                    # 空き時間を見つけるまでずらす
+                                    moved = True
+                                    while moved:
+                                        moved = False
+                                        for ev_s, ev_e in occupied:
+                                            if slot_start < ev_e and slot_end > ev_s:
+                                                slot_start = ev_e
+                                                slot_end   = slot_start + timedelta(minutes=duration)
+                                                moved = True
+                                                break
+
                                     add_schedule_event({
                                         "タイトル": item["タイトル"],
                                         "詳細": item.get("詳細", ""),
                                         "日付": today_str,
-                                        "開始時刻": "",
-                                        "終了時刻": "",
+                                        "開始時刻": slot_start.strftime("%H:%M"),
+                                        "終了時刻": slot_end.strftime("%H:%M"),
                                         "バックログID": item["ID"],
                                     })
-                                    st.toast(f"📌 「{item['タイトル']}」を本日のスケジュールに追加しました")
+                                    st.toast(f"📌 {slot_start.strftime('%H:%M')}〜{slot_end.strftime('%H:%M')} に「{item['タイトル']}」を追加しました")
                                     st.rerun()
                             with b2:
                                 if not is_done:
