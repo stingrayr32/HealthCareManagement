@@ -661,7 +661,7 @@ with tab_tasks:
                     "locale": "ja",
                     "allDaySlot": False,
                 }
-                cal_state = st_calendar(events=cal_events, options=cal_options, key="task_calendar_v2")
+                cal_state = st_calendar(events=cal_events, options=cal_options, key="task_calendar_v3")
 
                 if cal_state and cal_state.get("callback"):
                     cb = cal_state["callback"]
