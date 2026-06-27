@@ -572,26 +572,36 @@ with tab_tasks:
     if "clicked_event_title" not in st.session_state:
         st.session_state.clicked_event_title = None
 
+    # カレンダーとバックログを独立して扱う（一方が失敗しても他方を表示）
+    try:
+        schedule_df = load_schedule(today_str)
+        schedule_load_ok = True
+    except Exception as e:
+        schedule_df = None
+        schedule_load_ok = False
+        schedule_error = str(e)
+
     try:
         backlog_df = load_backlog()
-        schedule_df = load_schedule(today_str)
-        task_load_ok = True
+        backlog_load_ok = True
     except Exception as e:
-        st.error(f"タスクデータの読み込みに失敗しました: {e}")
-        task_load_ok = False
+        backlog_df = None
+        backlog_load_ok = False
+        backlog_error = str(e)
 
-    if task_load_ok:
+    if True:  # 常にレイアウトを表示
         # ローカルスケジュールイベント
         cal_events = []
-        for _, row in schedule_df.iterrows():
-            if row["開始時刻"] and row["終了時刻"]:
-                cal_events.append({
-                    "id": row["ID"],
-                    "title": row["タイトル"],
-                    "start": f"{row['日付']}T{row['開始時刻']}:00",
-                    "end": f"{row['日付']}T{row['終了時刻']}:00",
-                    "color": row.get("色", "#1976d2"),
-                })
+        if schedule_load_ok:
+            for _, row in schedule_df.iterrows():
+                if row["開始時刻"] and row["終了時刻"]:
+                    cal_events.append({
+                        "id": row["ID"],
+                        "title": row["タイトル"],
+                        "start": f"{row['日付']}T{row['開始時刻']}:00",
+                        "end": f"{row['日付']}T{row['終了時刻']}:00",
+                        "color": row.get("色", "#1976d2"),
+                    })
 
         # Google Calendarイベントを追加（設定済みの場合）
         gcal_id = get_calendar_id()
@@ -607,6 +617,8 @@ with tab_tasks:
 
         with left_col:
             st.markdown("### 📅 本日のスケジュール")
+            if not schedule_load_ok:
+                st.warning(f"スケジュールデータの読み込みに失敗しました: {schedule_error}")
             if gcal_id:
                 st.caption(
                     f"{date.today().strftime('%Y年%m月%d日')}　"
@@ -674,13 +686,20 @@ with tab_tasks:
 
         with right_col:
             st.markdown("### 📝 バックログ")
+            if not backlog_load_ok:
+                st.warning(f"バックログの読み込みに失敗しました: {backlog_error}")
             bl_filter = st.radio("表示", ["未着手・進行中", "完了"], horizontal=True, key="bl_filter")
-            if bl_filter == "未着手・進行中":
-                view_df = backlog_df[backlog_df["状態"].isin(["未着手", "進行中"])]
+            if backlog_load_ok:
+                if bl_filter == "未着手・進行中":
+                    view_df = backlog_df[backlog_df["状態"].isin(["未着手", "進行中"])]
+                else:
+                    view_df = backlog_df[backlog_df["状態"] == "完了"]
             else:
-                view_df = backlog_df[backlog_df["状態"] == "完了"]
+                view_df = None
 
-            if view_df.empty:
+            if view_df is None:
+                pass  # エラーは上に表示済み
+            elif view_df.empty:
                 st.info("バックログにアイテムがありません。")
             else:
                 for _, item in view_df.iterrows():
