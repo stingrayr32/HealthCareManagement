@@ -4,3 +4,4 @@ google-auth
 pandas
 plotly
 anthropic
+streamlit-calendar

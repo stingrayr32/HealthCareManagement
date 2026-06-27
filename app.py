@@ -5,9 +5,22 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import pandas as pd
 import numpy as np
-from datetime import date
+from datetime import date, time as dt_time
 from sheets_client import load_data, append_row, find_row_by_date, update_row
 from llm_parser import parse_health_input
+from task_client import (
+    load_backlog, load_schedule, add_backlog_item,
+    update_backlog_status, delete_backlog_item,
+    add_schedule_event, update_schedule_event, delete_schedule_event,
+    PRIORITY_COLOR,
+)
+from task_parser import parse_task_input
+
+try:
+    from streamlit_calendar import calendar as st_calendar
+    _calendar_ok = True
+except ImportError:
+    _calendar_ok = False
 
 st.set_page_config(
     page_title="健康管理ダッシュボード",
@@ -43,7 +56,7 @@ def save_config(cfg: dict) -> None:
         json.dump(cfg, f, ensure_ascii=False, indent=2)
 
 
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.4.0"
 
 if "config" not in st.session_state:
     st.session_state.config = load_config()
@@ -158,7 +171,7 @@ with st.sidebar:
 
 st.title("💪 健康管理ダッシュボード")
 
-tab_dashboard, tab_input, tab_info = st.tabs(["📊 ダッシュボード", "📝 データ入力", "ℹ️ バージョン情報"])
+tab_dashboard, tab_input, tab_tasks, tab_info = st.tabs(["📊 ダッシュボード", "📝 データ入力", "📋 タスク管理", "ℹ️ バージョン情報"])
 
 # =====================
 # ダッシュボードタブ
@@ -537,12 +550,233 @@ with tab_input:
                 st.rerun()
 
 # =====================
+# タスク管理タブ
+# =====================
+with tab_tasks:
+    today_str = date.today().isoformat()
+
+    if "task_messages" not in st.session_state:
+        st.session_state.task_messages = []
+    if "pending_task" not in st.session_state:
+        st.session_state.pending_task = None
+    if "scheduling_item" not in st.session_state:
+        st.session_state.scheduling_item = None
+    if "clicked_event_id" not in st.session_state:
+        st.session_state.clicked_event_id = None
+    if "clicked_event_title" not in st.session_state:
+        st.session_state.clicked_event_title = None
+
+    try:
+        backlog_df = load_backlog()
+        schedule_df = load_schedule(today_str)
+        task_load_ok = True
+    except Exception as e:
+        st.error(f"タスクデータの読み込みに失敗しました: {e}")
+        task_load_ok = False
+
+    if task_load_ok:
+        cal_events = []
+        for _, row in schedule_df.iterrows():
+            if row["開始時刻"] and row["終了時刻"]:
+                cal_events.append({
+                    "id": row["ID"],
+                    "title": row["タイトル"],
+                    "start": f"{row['日付']}T{row['開始時刻']}:00",
+                    "end": f"{row['日付']}T{row['終了時刻']}:00",
+                    "color": row.get("色", "#1976d2"),
+                })
+
+        left_col, right_col = st.columns([6, 5], gap="medium")
+
+        with left_col:
+            st.markdown("### 📅 本日のスケジュール")
+            st.caption(f"{date.today().strftime('%Y年%m月%d日')}　イベントをドラッグして時間を変更できます")
+
+            if not _calendar_ok:
+                st.warning("streamlit-calendar が見つかりません。`pip install streamlit-calendar` を実行してください。")
+            else:
+                cal_options = {
+                    "initialView": "timeGridDay",
+                    "initialDate": today_str,
+                    "editable": True,
+                    "selectable": True,
+                    "headerToolbar": {
+                        "left": "prev,next today",
+                        "center": "title",
+                        "right": "timeGridDay,timeGridWeek",
+                    },
+                    "slotMinTime": "06:00:00",
+                    "slotMaxTime": "25:00:00",
+                    "height": 560,
+                    "locale": "ja",
+                    "allDaySlot": False,
+                }
+                cal_state = st_calendar(events=cal_events, options=cal_options, key="task_calendar")
+
+                if cal_state and cal_state.get("callback"):
+                    cb = cal_state["callback"]
+                    if cb == "eventChange":
+                        changed = cal_state["eventChange"]["event"]
+                        eid = changed.get("id", "")
+                        new_start = changed.get("start", "")
+                        new_end = changed.get("end", "")
+                        if eid and new_start:
+                            new_date = new_start[:10]
+                            start_t = new_start[11:16] if len(new_start) > 15 else ""
+                            end_t = new_end[11:16] if len(new_end) > 15 else ""
+                            update_schedule_event(eid, {"日付": new_date, "開始時刻": start_t, "終了時刻": end_t})
+                            st.rerun()
+                    elif cb == "eventClick":
+                        clicked = cal_state["eventClick"]["event"]
+                        st.session_state.clicked_event_id = clicked.get("id")
+                        st.session_state.clicked_event_title = clicked.get("title", "")
+
+            if st.session_state.clicked_event_id:
+                with st.container(border=True):
+                    st.markdown(f"**選択中:** {st.session_state.clicked_event_title}")
+                    ec1, ec2 = st.columns(2)
+                    with ec1:
+                        if st.button("🗑️ このイベントを削除", key="del_event", type="primary", use_container_width=True):
+                            delete_schedule_event(st.session_state.clicked_event_id)
+                            st.session_state.clicked_event_id = None
+                            st.session_state.clicked_event_title = None
+                            st.rerun()
+                    with ec2:
+                        if st.button("✕ 閉じる", key="close_event", use_container_width=True):
+                            st.session_state.clicked_event_id = None
+                            st.session_state.clicked_event_title = None
+                            st.rerun()
+
+        with right_col:
+            st.markdown("### 📝 バックログ")
+            bl_filter = st.radio("表示", ["未着手・進行中", "完了"], horizontal=True, key="bl_filter")
+            if bl_filter == "未着手・進行中":
+                view_df = backlog_df[backlog_df["状態"].isin(["未着手", "進行中"])]
+            else:
+                view_df = backlog_df[backlog_df["状態"] == "完了"]
+
+            if view_df.empty:
+                st.info("バックログにアイテムがありません。")
+            else:
+                for _, item in view_df.iterrows():
+                    color = PRIORITY_COLOR.get(item.get("優先度", "中"), "#888")
+                    with st.container(border=True):
+                        hc1, hc2 = st.columns([8, 3])
+                        with hc1:
+                            st.markdown(
+                                f'<span style="background:{color};color:white;padding:1px 8px;'
+                                f'border-radius:10px;font-size:0.75em;font-weight:bold">'
+                                f'{item.get("優先度", "中")}</span>　**{item["タイトル"]}**',
+                                unsafe_allow_html=True,
+                            )
+                            if item.get("詳細"):
+                                st.caption(item["詳細"])
+                        with hc2:
+                            if st.button("📅", key=f"sched_{item['ID']}", help="スケジュールに追加"):
+                                st.session_state.scheduling_item = item.to_dict()
+                            if item.get("状態") != "完了":
+                                if st.button("✅", key=f"done_{item['ID']}", help="完了にする"):
+                                    update_backlog_status(item["ID"], "完了")
+                                    st.rerun()
+                            if st.button("🗑️", key=f"del_bl_{item['ID']}", help="削除"):
+                                delete_backlog_item(item["ID"])
+                                st.rerun()
+
+            if st.session_state.scheduling_item:
+                sitem = st.session_state.scheduling_item
+                with st.container(border=True):
+                    st.markdown(f"**📅 スケジュールに追加：{sitem['タイトル']}**")
+                    sched_date = st.date_input("日付", value=date.today(), key="sched_date")
+                    sc1, sc2 = st.columns(2)
+                    with sc1:
+                        start_t = st.time_input("開始時刻", value=dt_time(9, 0), key="sched_start")
+                    with sc2:
+                        end_t = st.time_input("終了時刻", value=dt_time(10, 0), key="sched_end")
+                    btn1, btn2 = st.columns(2)
+                    with btn1:
+                        if st.button("追加", type="primary", key="sched_confirm", use_container_width=True):
+                            add_schedule_event({
+                                "タイトル": sitem["タイトル"],
+                                "詳細": sitem.get("詳細", ""),
+                                "日付": sched_date.isoformat(),
+                                "開始時刻": start_t.strftime("%H:%M"),
+                                "終了時刻": end_t.strftime("%H:%M"),
+                                "バックログID": sitem.get("ID", ""),
+                                "色": PRIORITY_COLOR.get(sitem.get("優先度", "中"), "#1976d2"),
+                            })
+                            st.session_state.scheduling_item = None
+                            st.rerun()
+                    with btn2:
+                        if st.button("キャンセル", key="sched_cancel", use_container_width=True):
+                            st.session_state.scheduling_item = None
+                            st.rerun()
+
+            st.divider()
+            st.markdown("### ➕ タスクを追加")
+            st.caption("Claudeが優先度を判断してバックログに追加します")
+
+            for msg in st.session_state.task_messages[-6:]:
+                with st.chat_message(msg["role"]):
+                    st.markdown(msg["content"])
+
+            if st.session_state.pending_task:
+                ptask = st.session_state.pending_task
+                with st.container(border=True):
+                    st.markdown(
+                        f"**タイトル:** {ptask.get('タイトル', '')}  \n"
+                        f"**優先度:** {ptask.get('優先度', '中')}  \n"
+                        f"**詳細:** {ptask.get('詳細', '')}  \n"
+                        f"**推定時間:** {ptask.get('推定時間', '-')} 分"
+                    )
+                tc1, tc2 = st.columns(2)
+                with tc1:
+                    if st.button("✅ バックログに追加", type="primary", key="add_task_confirm", use_container_width=True):
+                        add_backlog_item({
+                            "タイトル": ptask.get("タイトル", ""),
+                            "詳細": ptask.get("詳細", ""),
+                            "優先度": ptask.get("優先度", "中"),
+                        })
+                        st.session_state.pending_task = None
+                        st.session_state.task_messages = []
+                        st.rerun()
+                with tc2:
+                    if st.button("❌ キャンセル", key="cancel_task_confirm", use_container_width=True):
+                        st.session_state.pending_task = None
+                        st.session_state.task_messages = []
+                        st.rerun()
+
+            with st.form("task_form", clear_on_submit=True):
+                task_text = st.text_area(
+                    "タスクを入力",
+                    placeholder="例：来週月曜日までに報告書を作成する（重要）",
+                    height=80,
+                    label_visibility="collapsed",
+                )
+                if st.form_submit_button("📤 Claudeに送信", type="primary", use_container_width=True):
+                    if not task_text.strip():
+                        st.warning("タスクを入力してください。")
+                    elif not api_key:
+                        st.error("Anthropic API キーが設定されていません。")
+                    else:
+                        with st.spinner("Claudeが解析中..."):
+                            try:
+                                parsed = parse_task_input(task_text.strip(), api_key)
+                                st.session_state.pending_task = parsed
+                                st.session_state.task_messages.append({"role": "user", "content": task_text.strip()})
+                                comment = parsed.get("comment", "")
+                                if comment:
+                                    st.session_state.task_messages.append({"role": "assistant", "content": comment})
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"解析エラー: {e}")
+
+# =====================
 # バージョン情報タブ
 # =====================
 with tab_info:
     st.subheader("ℹ️ バージョン情報")
     st.markdown(f"**バージョン:** {APP_VERSION}")
-    st.markdown("**最終更新:** 2026-06-27")
+    st.markdown("**最終更新:** 2026-06-27　（v1.4.0: タスク管理ページ追加）")
 
     st.divider()
     st.markdown("### 使用技術")
@@ -564,6 +798,7 @@ with tab_info:
     st.divider()
     st.markdown("### 更新履歴")
     history = [
+        ("1.4.0", "2026-06-27", "タスク管理ページ追加：バックログ管理・日次スケジュール・Claude AIタスク入力"),
         ("1.3.0", "2026-06-27", "摂取目標ダイアログのレイアウト改善、脂質・炭水化物の目標設定を追加"),
         ("1.2.0", "2026-06-27", "摂取目標の設定ダイアログ追加、設定の永続化、保存後の自動更新"),
         ("1.1.0", "2026-06-27", "チャット形式のデータ入力機能を追加（Claude AI連携）"),
