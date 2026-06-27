@@ -605,12 +605,14 @@ def add_item_dialog():
                     with st.spinner("Claudeが解析中..."):
                         try:
                             parsed = parse_task_input(task_text.strip(), api_key)
-                            st.session_state.pending_task = parsed
+                            if isinstance(parsed, list):
+                                parsed = parsed[0]
                             msgs = st.session_state.get("task_messages", [])
                             msgs.append({"role": "user", "content": task_text.strip()})
                             if parsed.get("comment"):
                                 msgs.append({"role": "assistant", "content": parsed["comment"]})
                             st.session_state.task_messages = msgs
+                            st.session_state.pending_task = parsed
                             st.rerun()
                         except Exception as e:
                             st.error(f"解析エラー: {e}")

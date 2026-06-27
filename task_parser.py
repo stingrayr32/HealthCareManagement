@@ -35,5 +35,10 @@ def parse_task_input(user_text: str, api_key: str) -> dict:
             if text.startswith("```"):
                 lines = text.split("\n")
                 text = "\n".join(lines[1:-1]) if lines[-1].strip() == "```" else "\n".join(lines[1:])
-            return json.loads(text)
+            result = json.loads(text)
+            if isinstance(result, list):
+                result = result[0]
+            if not isinstance(result, dict):
+                raise ValueError(f"想定外のレスポンス形式: {type(result)}")
+            return result
     raise ValueError("Claude からの応答にテキストが含まれていませんでした")
