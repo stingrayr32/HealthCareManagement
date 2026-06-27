@@ -1,3 +1,4 @@
+import json
 import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
@@ -14,9 +15,101 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("💪 健康管理ダッシュボード")
+HEIGHT_M = 1.71
+CONFIG_FILE = "config.json"
+DEFAULT_CONFIG = {
+    "target_weight": round(22.0 * HEIGHT_M ** 2, 1),
+    "cal_min": 1600,
+    "cal_max": 2160,
+    "protein_min": 60,
+    "protein_max": 120,
+}
 
-# --- サイドバー ---
+
+def load_config() -> dict:
+    try:
+        with open(CONFIG_FILE, encoding="utf-8") as f:
+            return {**DEFAULT_CONFIG, **json.load(f)}
+    except Exception:
+        return DEFAULT_CONFIG.copy()
+
+
+def save_config(cfg: dict) -> None:
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+
+
+if "config" not in st.session_state:
+    st.session_state.config = load_config()
+if "sidebar_visible" not in st.session_state:
+    st.session_state.sidebar_visible = True
+if "save_success" not in st.session_state:
+    st.session_state.save_success = False
+
+
+# =====================
+# ダイアログ定義
+# =====================
+@st.dialog("🎯 目標体重の設定")
+def weight_dialog():
+    cfg = st.session_state.config
+    new_weight = st.number_input(
+        "目標体重 (kg)", min_value=40.0, max_value=120.0,
+        value=float(cfg["target_weight"]), step=0.1, format="%.1f",
+    )
+    bmi = new_weight / HEIGHT_M ** 2
+    if bmi < 18.5:
+        label = "⚠️ 低体重域"
+    elif bmi < 25.0:
+        label = "✅ 普通体重域"
+    elif bmi < 30.0:
+        label = "⚠️ 過体重域"
+    else:
+        label = "⚠️ 肥満域"
+    st.caption(f"BMI: {bmi:.1f}　{label}")
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("保存", type="primary", use_container_width=True):
+            cfg["target_weight"] = new_weight
+            save_config(cfg)
+            st.session_state.config = cfg
+            st.rerun()
+    with c2:
+        if st.button("キャンセル", use_container_width=True):
+            st.rerun()
+
+
+@st.dialog("🍽️ 摂取目標の設定")
+def intake_dialog():
+    cfg = st.session_state.config
+    st.markdown("**カロリー目標範囲 (kcal)**")
+    cal_min = st.number_input("下限", min_value=0, max_value=5000, value=int(cfg["cal_min"]), step=50, key="d_cal_min")
+    cal_max = st.number_input("上限", min_value=0, max_value=5000, value=int(cfg["cal_max"]), step=50, key="d_cal_max")
+    st.markdown("**タンパク質目標範囲 (g)**")
+    protein_min = st.number_input("下限", min_value=0, max_value=300, value=int(cfg["protein_min"]), step=5, key="d_p_min")
+    protein_max = st.number_input("上限", min_value=0, max_value=300, value=int(cfg["protein_max"]), step=5, key="d_p_max")
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("保存", type="primary", use_container_width=True):
+            cfg.update({"cal_min": cal_min, "cal_max": cal_max,
+                        "protein_min": protein_min, "protein_max": protein_max})
+            save_config(cfg)
+            st.session_state.config = cfg
+            st.rerun()
+    with c2:
+        if st.button("キャンセル", use_container_width=True):
+            st.rerun()
+
+
+# =====================
+# サイドバー
+# =====================
+if not st.session_state.sidebar_visible:
+    st.markdown(
+        "<style>section[data-testid='stSidebar']{display:none}</style>",
+        unsafe_allow_html=True,
+    )
+
 with st.sidebar:
     st.header("📅 期間フィルター")
     filter_days = st.selectbox(
@@ -30,36 +123,34 @@ with st.sidebar:
         st.rerun()
 
     st.divider()
-    st.header("🎯 目標体重")
-    HEIGHT_M = 1.71
-    ideal_weight = round(22.0 * HEIGHT_M ** 2, 1)
-    target_weight_input = st.number_input(
-        "目標体重 (kg)",
-        min_value=40.0,
-        max_value=120.0,
-        value=ideal_weight,
-        step=0.1,
-        format="%.1f",
-    )
-    target_bmi = target_weight_input / HEIGHT_M ** 2
-    if target_bmi < 18.5:
-        bmi_warn = "⚠️ 低体重域（BMI 18.5未満）"
-    elif target_bmi < 25.0:
-        bmi_warn = "✅ 普通体重域"
-    elif target_bmi < 30.0:
-        bmi_warn = "⚠️ 過体重域"
-    else:
-        bmi_warn = "⚠️ 肥満域"
-    st.caption(f"BMI: {target_bmi:.1f}　{bmi_warn}")
+    cfg = st.session_state.config
+    st.caption(f"目標体重: **{cfg['target_weight']} kg**")
+    if st.button("🎯 目標体重を設定", use_container_width=True):
+        weight_dialog()
 
     st.divider()
-    st.header("🍽️ 摂取目標設定")
-    cal_min = st.number_input("カロリー下限 (kcal)", min_value=0, max_value=5000, value=1600, step=50)
-    cal_max = st.number_input("カロリー上限 (kcal)", min_value=0, max_value=5000, value=2160, step=50)
-    protein_min = st.number_input("タンパク質下限 (g)", min_value=0, max_value=300, value=60, step=5)
-    protein_max = st.number_input("タンパク質上限 (g)", min_value=0, max_value=300, value=120, step=5)
+    st.caption(
+        f"カロリー: **{cfg['cal_min']}〜{cfg['cal_max']} kcal**  \n"
+        f"タンパク質: **{cfg['protein_min']}〜{cfg['protein_max']} g**"
+    )
+    if st.button("🍽️ 摂取目標を設定", use_container_width=True):
+        intake_dialog()
 
     api_key = st.secrets.get("ANTHROPIC_API_KEY", "")
+
+# =====================
+# タイトルとサイドバー切り替え
+# =====================
+title_col, toggle_col = st.columns([8, 1])
+with title_col:
+    st.title("💪 健康管理ダッシュボード")
+with toggle_col:
+    st.write("")
+    st.write("")
+    toggle_label = "◀ 隠す" if st.session_state.sidebar_visible else "▶ 表示"
+    if st.button(toggle_label, key="sidebar_toggle"):
+        st.session_state.sidebar_visible = not st.session_state.sidebar_visible
+        st.rerun()
 
 tab_dashboard, tab_input = st.tabs(["📊 ダッシュボード", "📝 データ入力"])
 
@@ -76,6 +167,14 @@ with tab_dashboard:
     if df is None or df.empty:
         st.warning("スプレッドシートにデータがありません。")
     else:
+        cfg = st.session_state.config
+        target_weight = float(cfg["target_weight"])
+        cal_min = int(cfg["cal_min"])
+        cal_max = int(cfg["cal_max"])
+        protein_min = int(cfg["protein_min"])
+        protein_max = int(cfg["protein_max"])
+        target_bmi = target_weight / HEIGHT_M ** 2
+
         if filter_days == 0:
             df_filtered = df.copy()
         else:
@@ -96,14 +195,7 @@ with tab_dashboard:
             with col2:
                 if pd.notna(latest["体重"]):
                     bmi = latest["体重"] / (HEIGHT_M ** 2)
-                    if bmi < 18.5:
-                        bmi_label = "低体重"
-                    elif bmi < 25.0:
-                        bmi_label = "普通体重"
-                    elif bmi < 30.0:
-                        bmi_label = "過体重"
-                    else:
-                        bmi_label = "肥満"
+                    bmi_label = "低体重" if bmi < 18.5 else "普通体重" if bmi < 25 else "過体重" if bmi < 30 else "肥満"
                     st.metric("BMI", f"{bmi:.1f}", delta=bmi_label, delta_color="off")
                 else:
                     st.metric("BMI", "N/A")
@@ -134,8 +226,6 @@ with tab_dashboard:
             st.divider()
 
             # --- グラフ1: 体重・体脂肪の推移 ---
-            TARGET_WEIGHT = target_weight_input
-
             weight_data = df_filtered[["日付", "体重"]].dropna()
             pred_dates = []
             pred_y = []
@@ -146,9 +236,8 @@ with tab_dashboard:
                 x_days = (weight_data["日付"] - origin).dt.days.values.astype(float)
                 y_vals = weight_data["体重"].values.astype(float)
                 slope, intercept = np.polyfit(x_days, y_vals, 1)
-
                 if slope < 0:
-                    days_to_target = (TARGET_WEIGHT - intercept) / slope
+                    days_to_target = (target_weight - intercept) / slope
                     future_days = np.arange(0, int(days_to_target) + 1, 1)
                     pred_dates = [origin + pd.Timedelta(days=int(d)) for d in future_days]
                     pred_y = (slope * future_days + intercept).tolist()
@@ -156,7 +245,7 @@ with tab_dashboard:
 
             st.subheader("📈 体重・体脂肪の推移")
             if target_date:
-                st.caption(f"目標体重: **{TARGET_WEIGHT} kg**（BMI {target_bmi:.1f}）　予測到達日: **{target_date.strftime('%Y/%m/%d')}**")
+                st.caption(f"目標体重: **{target_weight} kg**（BMI {target_bmi:.1f}）　予測到達日: **{target_date.strftime('%Y/%m/%d')}**")
 
             fat_mass = (df_filtered["体重"] * df_filtered["体脂肪"] / 100).where(
                 df_filtered["体重"].notna() & df_filtered["体脂肪"].notna()
@@ -182,13 +271,12 @@ with tab_dashboard:
             if pred_dates:
                 fig_weight.add_trace(
                     go.Scatter(x=pred_dates, y=pred_y, name="予測トレンド",
-                               line=dict(color="#4CAF50", width=2, dash="dash"),
-                               mode="lines"),
+                               line=dict(color="#4CAF50", width=2, dash="dash"), mode="lines"),
                     secondary_y=False,
                 )
                 fig_weight.add_hline(
-                    y=TARGET_WEIGHT, line_dash="dot", line_color="#4CAF50", line_width=1.5,
-                    annotation_text=f"目標 {TARGET_WEIGHT} kg",
+                    y=target_weight, line_dash="dot", line_color="#4CAF50", line_width=1.5,
+                    annotation_text=f"目標 {target_weight} kg",
                     annotation_position="bottom right",
                     annotation_font_color="#4CAF50",
                     secondary_y=False,
@@ -206,14 +294,14 @@ with tab_dashboard:
 <div style="font-size:0.72em;color:{color};margin-top:1px">{status}</div>
 </div>"""
 
-            today_str = pd.Timestamp.today().normalize()
-            today_rows = df[df["日付"] == today_str]
+            today_ts = pd.Timestamp.today().normalize()
+            today_rows = df[df["日付"] == today_ts]
             if not today_rows.empty:
                 t = today_rows.iloc[-1]
                 st.subheader("🗓️ 本日の摂取状況")
                 tc1, tc2, tc3, tc4, tc5, tc6, tc7 = st.columns(7)
 
-                def cal_status(val):
+                def cal_color(val):
                     if val is None:
                         return "gray", "-", "未記録"
                     if val < cal_min:
@@ -222,7 +310,7 @@ with tab_dashboard:
                         return "#e53935", f"{val:.0f}", f"超過 (+{val - cal_max:.0f})"
                     return "#43a047", f"{val:.0f}", "目標内 ✓"
 
-                def protein_status(val):
+                def protein_color(val):
                     if val is None:
                         return "gray", "-", "未記録"
                     if val < protein_min:
@@ -232,7 +320,7 @@ with tab_dashboard:
                     return "#43a047", f"{val:.0f}", "目標内 ✓"
 
                 cal_val = t["総カロリー"] if pd.notna(t["総カロリー"]) else None
-                c, v, s = cal_status(cal_val)
+                c, v, s = cal_color(cal_val)
                 with tc1:
                     st.markdown(_colored_card("総Cal (kcal)", v, c, s), unsafe_allow_html=True)
                 with tc2:
@@ -244,9 +332,8 @@ with tab_dashboard:
                 with tc4:
                     v4 = f"{t['夕食Cal']:.0f}" if pd.notna(t["夕食Cal"]) else "-"
                     st.markdown(_colored_card("夕食 (kcal)", v4, "#1976d2", ""), unsafe_allow_html=True)
-
                 p_val = t["総タンパク質"] if pd.notna(t["総タンパク質"]) else None
-                cp, vp, sp = protein_status(p_val)
+                cp, vp, sp = protein_color(p_val)
                 with tc5:
                     st.markdown(_colored_card("タンパク質 (g)", vp, cp, sp), unsafe_allow_html=True)
                 with tc6:
@@ -257,21 +344,15 @@ with tab_dashboard:
                     st.markdown(_colored_card("炭水化物 (g)", vc, "#1976d2", ""), unsafe_allow_html=True)
 
             # --- グラフ2: カロリー摂取の内訳 ---
-            CALORIE_LIMIT = 2160
-
             st.subheader("🍽️ カロリー摂取の推移（朝・昼・夕）")
             fig_cal = go.Figure()
             fig_cal.add_trace(go.Bar(x=df_filtered["日付"], y=df_filtered["朝食Cal"], name="朝食", marker_color="#FFB74D"))
             fig_cal.add_trace(go.Bar(x=df_filtered["日付"], y=df_filtered["昼食Cal"], name="昼食", marker_color="#4DB6AC"))
             fig_cal.add_trace(go.Bar(x=df_filtered["日付"], y=df_filtered["夕食Cal"], name="夕食", marker_color="#7986CB"))
             fig_cal.add_hline(
-                y=CALORIE_LIMIT,
-                line_dash="dot",
-                line_color="red",
-                line_width=2,
-                annotation_text=f"推奨上限 {CALORIE_LIMIT} kcal",
-                annotation_position="top right",
-                annotation_font_color="red",
+                y=cal_max, line_dash="dot", line_color="red", line_width=2,
+                annotation_text=f"上限 {cal_max} kcal",
+                annotation_position="top right", annotation_font_color="red",
             )
             fig_cal.update_layout(barmode="stack", height=350, yaxis_title="カロリー (kcal)",
                                   hovermode="x unified", legend=dict(orientation="h", y=1.1))
@@ -279,7 +360,6 @@ with tab_dashboard:
 
             # --- グラフ3: PFCバランス & 歩数 ---
             col_left, col_right = st.columns(2)
-
             with col_left:
                 st.subheader("🥗 平均PFCバランス")
                 avg_p = df_filtered["総タンパク質"].mean()
@@ -320,6 +400,10 @@ with tab_dashboard:
 # データ入力タブ
 # =====================
 with tab_input:
+    if st.session_state.save_success:
+        st.success("スプレッドシートに保存しました！ダッシュボードのデータを更新しました。")
+        st.session_state.save_success = False
+
     st.subheader("📝 今日の記録を入力")
     st.markdown(
         "体重・体脂肪・朝食・昼食・夕食・飲酒・運動の内容を自由に入力してください。"
@@ -346,8 +430,7 @@ with tab_input:
 
         if not api_key:
             with st.chat_message("assistant"):
-                st.error("サイドバーに Anthropic API キーを入力してください。")
-            st.session_state.chat_messages.append({"role": "assistant", "content": "⚠️ サイドバーに Anthropic API キーを入力してください。"})
+                st.error("Anthropic API キーが設定されていません。")
         else:
             with st.chat_message("assistant"):
                 with st.spinner("Claudeが解析中..."):
@@ -417,13 +500,13 @@ with tab_input:
                     existing_idx = st.session_state.get("existing_row_index")
                     if existing_idx:
                         update_row(existing_idx, row)
-                        st.success("既存データを更新しました！")
                     else:
                         append_row(row)
-                        st.success("スプレッドシートに保存しました！")
                     st.session_state.parsed_data = None
                     st.session_state.existing_row_index = None
+                    st.session_state.save_success = True
                     st.cache_data.clear()
+                    st.rerun()
                 except Exception as e:
                     st.error(f"保存に失敗しました: {e}")
         with col_cancel:
