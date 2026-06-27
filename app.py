@@ -557,6 +557,12 @@ with tab_dashboard:
 # =====================
 @st.dialog("➕ 追加", width="large")
 def add_item_dialog():
+    # 壊れた状態をクリア（dict以外が入っていたらリセット）
+    if "pending_task" in st.session_state and not isinstance(st.session_state.pending_task, dict):
+        st.session_state.pending_task = None
+    if "task_messages" in st.session_state and not isinstance(st.session_state.task_messages, list):
+        st.session_state.task_messages = []
+
     d_tab1, d_tab2 = st.tabs(["📝 バックログに追加 (AI)", "📅 スケジュールに追加"])
 
     with d_tab1:
