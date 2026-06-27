@@ -23,6 +23,10 @@ DEFAULT_CONFIG = {
     "cal_max": 2160,
     "protein_min": 60,
     "protein_max": 120,
+    "fat_min": 40,
+    "fat_max": 80,
+    "carb_min": 150,
+    "carb_max": 300,
 }
 
 
@@ -82,17 +86,35 @@ def weight_dialog():
 @st.dialog("🍽️ 摂取目標の設定")
 def intake_dialog():
     cfg = st.session_state.config
-    st.markdown("**カロリー目標範囲 (kcal)**")
-    cal_min = st.number_input("下限", min_value=0, max_value=5000, value=int(cfg["cal_min"]), step=50, key="d_cal_min")
-    cal_max = st.number_input("上限", min_value=0, max_value=5000, value=int(cfg["cal_max"]), step=50, key="d_cal_max")
-    st.markdown("**タンパク質目標範囲 (g)**")
-    protein_min = st.number_input("下限", min_value=0, max_value=300, value=int(cfg["protein_min"]), step=5, key="d_p_min")
-    protein_max = st.number_input("上限", min_value=0, max_value=300, value=int(cfg["protein_max"]), step=5, key="d_p_max")
+
+    def range_row(label, key_min, key_max, default_min, default_max, max_val, step):
+        st.markdown(f"**{label}**")
+        c1, c2, c3 = st.columns([5, 1, 5])
+        with c1:
+            v_min = st.number_input("下限", min_value=0, max_value=max_val, value=int(cfg.get(default_min, 0)),
+                                    step=step, key=key_min, label_visibility="collapsed")
+        with c2:
+            st.markdown("<div style='text-align:center;padding-top:8px'>〜</div>", unsafe_allow_html=True)
+        with c3:
+            v_max = st.number_input("上限", min_value=0, max_value=max_val, value=int(cfg.get(default_max, 0)),
+                                    step=step, key=key_max, label_visibility="collapsed")
+        st.caption(f"下限 {v_min} 〜 上限 {v_max}")
+        return v_min, v_max
+
+    cal_min, cal_max         = range_row("カロリー (kcal)", "d_cal_min", "d_cal_max", "cal_min", "cal_max", 5000, 50)
+    protein_min, protein_max = range_row("タンパク質 (g)", "d_p_min",   "d_p_max",   "protein_min", "protein_max", 300, 5)
+    fat_min, fat_max         = range_row("脂質 (g)",       "d_f_min",   "d_f_max",   "fat_min", "fat_max", 300, 5)
+    carb_min, carb_max       = range_row("炭水化物 (g)",   "d_c_min",   "d_c_max",   "carb_min", "carb_max", 500, 10)
+
     c1, c2 = st.columns(2)
     with c1:
         if st.button("保存", type="primary", use_container_width=True):
-            cfg.update({"cal_min": cal_min, "cal_max": cal_max,
-                        "protein_min": protein_min, "protein_max": protein_max})
+            cfg.update({
+                "cal_min": cal_min, "cal_max": cal_max,
+                "protein_min": protein_min, "protein_max": protein_max,
+                "fat_min": fat_min, "fat_max": fat_max,
+                "carb_min": carb_min, "carb_max": carb_max,
+            })
             save_config(cfg)
             st.session_state.config = cfg
             st.rerun()
@@ -131,7 +153,9 @@ with st.sidebar:
     st.divider()
     st.caption(
         f"カロリー: **{cfg['cal_min']}〜{cfg['cal_max']} kcal**  \n"
-        f"タンパク質: **{cfg['protein_min']}〜{cfg['protein_max']} g**"
+        f"P: **{cfg['protein_min']}〜{cfg['protein_max']} g**  \n"
+        f"F: **{cfg.get('fat_min', 40)}〜{cfg.get('fat_max', 80)} g**  \n"
+        f"C: **{cfg.get('carb_min', 150)}〜{cfg.get('carb_max', 300)} g**"
     )
     if st.button("🍽️ 摂取目標を設定", use_container_width=True):
         intake_dialog()
@@ -173,6 +197,10 @@ with tab_dashboard:
         cal_max = int(cfg["cal_max"])
         protein_min = int(cfg["protein_min"])
         protein_max = int(cfg["protein_max"])
+        fat_min = int(cfg.get("fat_min", 40))
+        fat_max = int(cfg.get("fat_max", 80))
+        carb_min = int(cfg.get("carb_min", 150))
+        carb_max = int(cfg.get("carb_max", 300))
         target_bmi = target_weight / HEIGHT_M ** 2
 
         if filter_days == 0:
@@ -319,6 +347,15 @@ with tab_dashboard:
                         return "#e53935", f"{val:.0f}", f"超過 (+{val - protein_max:.0f})"
                     return "#43a047", f"{val:.0f}", "目標内 ✓"
 
+                def range_color(val, v_min, v_max):
+                    if val is None:
+                        return "gray", "-", "未記録"
+                    if val < v_min:
+                        return "#e53935", f"{val:.0f}", f"不足 ({val - v_min:.0f})"
+                    if val > v_max:
+                        return "#e53935", f"{val:.0f}", f"超過 (+{val - v_max:.0f})"
+                    return "#43a047", f"{val:.0f}", "目標内 ✓"
+
                 cal_val = t["総カロリー"] if pd.notna(t["総カロリー"]) else None
                 c, v, s = cal_color(cal_val)
                 with tc1:
@@ -336,12 +373,14 @@ with tab_dashboard:
                 cp, vp, sp = protein_color(p_val)
                 with tc5:
                     st.markdown(_colored_card("タンパク質 (g)", vp, cp, sp), unsafe_allow_html=True)
+                f_val = t["総脂質"] if pd.notna(t["総脂質"]) else None
+                cf, vf, sf = range_color(f_val, fat_min, fat_max)
                 with tc6:
-                    vf = f"{t['総脂質']:.0f}" if pd.notna(t["総脂質"]) else "-"
-                    st.markdown(_colored_card("脂質 (g)", vf, "#1976d2", ""), unsafe_allow_html=True)
+                    st.markdown(_colored_card("脂質 (g)", vf, cf, sf), unsafe_allow_html=True)
+                c_val = t["総炭水化物"] if pd.notna(t["総炭水化物"]) else None
+                cc, vc, sc = range_color(c_val, carb_min, carb_max)
                 with tc7:
-                    vc = f"{t['総炭水化物']:.0f}" if pd.notna(t["総炭水化物"]) else "-"
-                    st.markdown(_colored_card("炭水化物 (g)", vc, "#1976d2", ""), unsafe_allow_html=True)
+                    st.markdown(_colored_card("炭水化物 (g)", vc, cc, sc), unsafe_allow_html=True)
 
             # --- グラフ2: カロリー摂取の内訳 ---
             st.subheader("🍽️ カロリー摂取の推移（朝・昼・夕）")
