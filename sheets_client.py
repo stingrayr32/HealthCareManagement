@@ -23,9 +23,9 @@ COLUMNS = [
 
 
 def _get_credentials():
-    # クラウド環境: Streamlit Secrets の GOOGLE_CREDENTIALS から読み込む
-    if "GOOGLE_CREDENTIALS" in st.secrets:
-        info = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
+    # クラウド環境: Streamlit Secrets の [gcp_service_account] セクションから読み込む
+    if "gcp_service_account" in st.secrets:
+        info = dict(st.secrets["gcp_service_account"])
         return Credentials.from_service_account_info(info, scopes=SCOPES)
     # ローカル環境: JSONファイルから読み込む
     return Credentials.from_service_account_file(CREDENTIALS_FILE, scopes=SCOPES)
