@@ -15,7 +15,14 @@ from task_client import (
     PRIORITY_COLOR,
 )
 from task_parser import parse_task_input
-from gcal_client import fetch_events, to_calendar_events, get_calendar_id
+try:
+    from gcal_client import fetch_events, to_calendar_events, get_calendar_id
+    _gcal_available = True
+except Exception:
+    _gcal_available = False
+    def fetch_events(*a, **kw): return []
+    def to_calendar_events(*a, **kw): return []
+    def get_calendar_id(): return None
 
 try:
     from streamlit_calendar import calendar as st_calendar

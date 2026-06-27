@@ -2,7 +2,6 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 import streamlit as st
 from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
 from sheets_client import CREDENTIALS_FILE
 
 SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
@@ -18,27 +17,26 @@ def _get_credentials():
 
 
 def _build_service():
+    # lazy import: googleapiclient をモジュール最上部で読み込まず副作用を回避
+    from googleapiclient.discovery import build
     return build("calendar", "v3", credentials=_get_credentials(), cache_discovery=False)
 
 
 @st.cache_data(ttl=300)
 def fetch_events(calendar_id: str, target_date: str) -> list[dict]:
-    """指定日のGoogle Calendarイベントを取得する（JST基準）"""
-    try:
-        service = _build_service()
-        day = date.fromisoformat(target_date)
-        time_min = datetime.combine(day, datetime.min.time()).replace(tzinfo=JST).isoformat()
-        time_max = datetime.combine(day + timedelta(days=1), datetime.min.time()).replace(tzinfo=JST).isoformat()
-        result = service.events().list(
-            calendarId=calendar_id,
-            timeMin=time_min,
-            timeMax=time_max,
-            singleEvents=True,
-            orderBy="startTime",
-        ).execute()
-        return result.get("items", [])
-    except Exception as e:
-        return []
+    """指定日のGoogle Calendarイベントを取得する（JST基準）。エラーは呼び出し元に伝播させる。"""
+    service = _build_service()
+    day = date.fromisoformat(target_date)
+    time_min = datetime.combine(day, datetime.min.time()).replace(tzinfo=JST).isoformat()
+    time_max = datetime.combine(day + timedelta(days=1), datetime.min.time()).replace(tzinfo=JST).isoformat()
+    result = service.events().list(
+        calendarId=calendar_id,
+        timeMin=time_min,
+        timeMax=time_max,
+        singleEvents=True,
+        orderBy="startTime",
+    ).execute()
+    return result.get("items", [])
 
 
 def to_calendar_events(items: list[dict]) -> list[dict]:
@@ -61,5 +59,5 @@ def to_calendar_events(items: list[dict]) -> list[dict]:
 
 
 def get_calendar_id() -> str | None:
-    """GOOGLE_CALENDAR_ID をシークレットまたは環境から取得"""
+    """GOOGLE_CALENDAR_ID をシークレットから取得"""
     return st.secrets.get("GOOGLE_CALENDAR_ID", None)
