@@ -652,9 +652,10 @@ with tab_tasks:
                     },
                     "slotMinTime": "06:00:00",
                     "slotMaxTime": "25:00:00",
-                    "height": 560,
+                    "height": 580,
                     "locale": "ja",
-                    "allDaySlot": False,
+                    "allDaySlot": True,
+                    "timeZone": "Asia/Tokyo",
                 }
                 cal_state = st_calendar(events=cal_events, options=cal_options, key="task_calendar")
 

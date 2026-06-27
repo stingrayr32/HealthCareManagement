@@ -45,16 +45,23 @@ def to_calendar_events(items: list[dict]) -> list[dict]:
     for ev in items:
         start = ev.get("start", {})
         end = ev.get("end", {})
-        start_str = start.get("dateTime", start.get("date", ""))
-        end_str = end.get("dateTime", end.get("date", ""))
-        events.append({
+        # dateTime があれば時刻付き予定、なければ終日予定
+        start_dt = start.get("dateTime")
+        end_dt = end.get("dateTime")
+        is_all_day = start_dt is None
+        start_str = start_dt if start_dt else start.get("date", "")
+        end_str = end_dt if end_dt else end.get("date", "")
+        event = {
             "id": f"gcal_{ev.get('id', '')}",
             "title": "📅 " + ev.get("summary", "（タイトルなし）"),
             "start": start_str,
             "end": end_str,
             "color": "#0F9D58",
             "editable": False,
-        })
+        }
+        if is_all_day:
+            event["allDay"] = True
+        events.append(event)
     return events
 
 
