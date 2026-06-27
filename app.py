@@ -5,7 +5,9 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import pandas as pd
 import numpy as np
-from datetime import date, time as dt_time
+from datetime import time as dt_time, datetime, timezone, timedelta
+
+_JST = timezone(timedelta(hours=9))
 from sheets_client import load_data, append_row, find_row_by_date, update_row
 from llm_parser import parse_health_input
 from task_client import (
@@ -516,7 +518,7 @@ with tab_dashboard:
             with st.chat_message("assistant"):
                 with st.spinner("Claudeが解析中..."):
                     try:
-                        today_str = date.today().strftime("%Y-%m-%d")
+                        today_str = datetime.now(_JST).strftime("%Y-%m-%d")
                         existing_row_index, existing_data = find_row_by_date(today_str)
                         parsed = parse_health_input(
                             user_input, api_key, today_str,
@@ -560,7 +562,7 @@ with tab_dashboard:
 # タスク管理タブ
 # =====================
 with tab_tasks:
-    today_str = date.today().isoformat()
+    today_str = datetime.now(_JST).date().isoformat()
 
     if "task_messages" not in st.session_state:
         st.session_state.task_messages = []
@@ -634,13 +636,13 @@ with tab_tasks:
 
             if gcal_id and not gcal_error:
                 st.caption(
-                    f"{date.today().strftime('%Y年%m月%d日')}　"
+                    f"{datetime.now(_JST).strftime('%Y年%m月%d日')}　"
                     "🟢 Google Calendar連携中　青=ToDoスケジュール　緑=Googleカレンダー"
                 )
                 if gcal_allday:
                     st.info("📅 終日予定: " + "　/　".join(gcal_allday))
             else:
-                st.caption(f"{date.today().strftime('%Y年%m月%d日')}　イベントをドラッグして時間を変更できます")
+                st.caption(f"{datetime.now(_JST).strftime('%Y年%m月%d日')}　イベントをドラッグして時間を変更できます")
 
             if not _calendar_ok:
                 st.warning("streamlit-calendar が見つかりません。`pip install streamlit-calendar` を実行してください。")
@@ -743,7 +745,7 @@ with tab_tasks:
                 sitem = st.session_state.scheduling_item
                 with st.container(border=True):
                     st.markdown(f"**📅 スケジュールに追加：{sitem['タイトル']}**")
-                    sched_date = st.date_input("日付", value=date.today(), key="sched_date")
+                    sched_date = st.date_input("日付", value=datetime.now(_JST).date(), key="sched_date")
                     sc1, sc2 = st.columns(2)
                     with sc1:
                         start_t = st.time_input("開始時刻", value=dt_time(9, 0), key="sched_start")
