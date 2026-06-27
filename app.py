@@ -197,27 +197,29 @@ with tab_dashboard:
             if not today_rows.empty:
                 t = today_rows.iloc[-1]
                 st.subheader("🗓️ 本日の摂取状況")
-                tc1, tc2, tc3, tc4, tc5 = st.columns(5)
+                tc1, tc2, tc3, tc4, tc5, tc6, tc7 = st.columns(7)
                 CALORIE_LIMIT_TODAY = 2160
                 cal_val = t["総カロリー"] if pd.notna(t["総カロリー"]) else None
                 with tc1:
                     st.metric(
-                        "総カロリー",
-                        f"{cal_val:.0f} kcal" if cal_val is not None else "未記録",
-                        delta=f"{cal_val - CALORIE_LIMIT_TODAY:+.0f} kcal" if cal_val is not None else None,
+                        "総Cal",
+                        f"{cal_val:.0f}" if cal_val is not None else "-",
+                        delta=f"{cal_val - CALORIE_LIMIT_TODAY:+.0f}" if cal_val is not None else None,
                         delta_color="inverse",
+                        help="総カロリー (kcal)",
                     )
                 with tc2:
-                    st.metric("朝食", f"{t['朝食Cal']:.0f} kcal" if pd.notna(t["朝食Cal"]) else "未記録")
+                    st.metric("朝食", f"{t['朝食Cal']:.0f}" if pd.notna(t["朝食Cal"]) else "-", help="朝食カロリー (kcal)")
                 with tc3:
-                    st.metric("昼食", f"{t['昼食Cal']:.0f} kcal" if pd.notna(t["昼食Cal"]) else "未記録")
+                    st.metric("昼食", f"{t['昼食Cal']:.0f}" if pd.notna(t["昼食Cal"]) else "-", help="昼食カロリー (kcal)")
                 with tc4:
-                    st.metric("夕食", f"{t['夕食Cal']:.0f} kcal" if pd.notna(t["夕食Cal"]) else "未記録")
+                    st.metric("夕食", f"{t['夕食Cal']:.0f}" if pd.notna(t["夕食Cal"]) else "-", help="夕食カロリー (kcal)")
                 with tc5:
-                    p_val = f"{t['総タンパク質']:.0f}g" if pd.notna(t["総タンパク質"]) else "-"
-                    f_val = f"{t['総脂質']:.0f}g" if pd.notna(t["総脂質"]) else "-"
-                    c_val = f"{t['総炭水化物']:.0f}g" if pd.notna(t["総炭水化物"]) else "-"
-                    st.metric("PFC", f"P{p_val} / F{f_val} / C{c_val}")
+                    st.metric("P (g)", f"{t['総タンパク質']:.0f}" if pd.notna(t["総タンパク質"]) else "-", help="タンパク質 (g)")
+                with tc6:
+                    st.metric("F (g)", f"{t['総脂質']:.0f}" if pd.notna(t["総脂質"]) else "-", help="脂質 (g)")
+                with tc7:
+                    st.metric("C (g)", f"{t['総炭水化物']:.0f}" if pd.notna(t["総炭水化物"]) else "-", help="炭水化物 (g)")
 
             # --- グラフ2: カロリー摂取の内訳 ---
             CALORIE_LIMIT = 2160
