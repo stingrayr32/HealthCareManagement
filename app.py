@@ -16,12 +16,13 @@ from task_client import (
 )
 from task_parser import parse_task_input
 try:
-    from gcal_client import fetch_events, to_calendar_events, get_calendar_id
+    from gcal_client import fetch_events, to_timed_calendar_events, get_allday_titles, get_calendar_id
     _gcal_available = True
 except Exception:
     _gcal_available = False
     def fetch_events(*a, **kw): return []
-    def to_calendar_events(*a, **kw): return []
+    def to_timed_calendar_events(*a, **kw): return []
+    def get_allday_titles(*a, **kw): return []
     def get_calendar_id(): return None
 
 try:
@@ -606,10 +607,12 @@ with tab_tasks:
         # Google Calendarイベントを追加（設定済みの場合）
         gcal_id = get_calendar_id()
         gcal_error = None
+        gcal_allday = []
         if gcal_id:
             try:
                 gcal_items = fetch_events(gcal_id, today_str)
-                cal_events += to_calendar_events(gcal_items)
+                cal_events += to_timed_calendar_events(gcal_items)   # 時刻付きのみグリッドへ
+                gcal_allday = get_allday_titles(gcal_items)           # 終日予定はリストへ
             except Exception as e:
                 gcal_error = str(e)
 
@@ -634,14 +637,14 @@ with tab_tasks:
                     f"{date.today().strftime('%Y年%m月%d日')}　"
                     "🟢 Google Calendar連携中　青=ToDoスケジュール　緑=Googleカレンダー"
                 )
+                if gcal_allday:
+                    st.info("📅 終日予定: " + "　/　".join(gcal_allday))
             else:
                 st.caption(f"{date.today().strftime('%Y年%m月%d日')}　イベントをドラッグして時間を変更できます")
 
             if not _calendar_ok:
                 st.warning("streamlit-calendar が見つかりません。`pip install streamlit-calendar` を実行してください。")
             else:
-                st.caption(f"[debug] イベント数={len(cal_events)}, calendar_ok={_calendar_ok}")
-                st.json(cal_events)  # イベントの中身を表示
                 cal_options = {
                     "initialView": "timeGridDay",
                     "initialDate": today_str,
@@ -658,10 +661,6 @@ with tab_tasks:
                     "locale": "ja",
                     "allDaySlot": False,
                 }
-                # まずイベントなしで描画テスト
-                st.caption("[debug] イベントなしでカレンダーを描画:")
-                st_calendar(events=[], options=cal_options, key="task_calendar_empty")
-                st.caption("[debug] イベントありでカレンダーを描画:")
                 cal_state = st_calendar(events=cal_events, options=cal_options, key="task_calendar_v2")
 
                 if cal_state and cal_state.get("callback"):
