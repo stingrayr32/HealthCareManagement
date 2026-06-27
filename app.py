@@ -659,11 +659,67 @@ with tab_tasks:
                     },
                     "slotMinTime": "06:00:00",
                     "slotMaxTime": "25:00:00",
-                    "height": 560,
+                    "height": 580,
                     "locale": "ja",
                     "allDaySlot": False,
+                    "nowIndicator": True,
+                    "slotLabelFormat": {"hour": "2-digit", "minute": "2-digit", "hour12": False},
+                    "eventTimeFormat": {"hour": "2-digit", "minute": "2-digit", "hour12": False},
                 }
-                cal_state = st_calendar(events=cal_events, options=cal_options, key="task_calendar_v4")
+                cal_css = """
+                    /* グリッド線を薄く */
+                    .fc-timegrid-slot { border-color: #eef2f7 !important; }
+                    .fc-scrollgrid, .fc-scrollgrid td, .fc-scrollgrid th {
+                        border-color: #e2e8f0 !important;
+                    }
+                    /* ヘッダーをやわらかく */
+                    .fc-col-header-cell {
+                        background: #f7f9fc !important;
+                        padding: 8px 0 !important;
+                        font-weight: 600 !important;
+                        color: #4a5568 !important;
+                        border-color: #e2e8f0 !important;
+                    }
+                    .fc-toolbar-title {
+                        font-size: 1.1rem !important;
+                        font-weight: 600 !important;
+                        color: #2d3748 !important;
+                    }
+                    /* 時刻ラベルを細く薄く */
+                    .fc-timegrid-axis-cushion, .fc-timegrid-slot-label-cushion {
+                        font-size: 0.72rem !important;
+                        color: #a0aec0 !important;
+                    }
+                    /* イベントを丸くシャドウ付き */
+                    .fc-timegrid-event {
+                        border-radius: 10px !important;
+                        border: none !important;
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.10) !important;
+                        padding: 2px 6px !important;
+                    }
+                    .fc-event-title { font-size: 0.8rem !important; font-weight: 500 !important; }
+                    .fc-event-time  { font-size: 0.7rem !important; opacity: 0.85 !important; }
+                    /* 現在時刻インジケーター */
+                    .fc-timegrid-now-indicator-line {
+                        border-color: #f56565 !important;
+                        border-width: 2px !important;
+                    }
+                    .fc-timegrid-now-indicator-arrow { border-top-color: #f56565 !important; }
+                    /* 今日の列を薄く色付け */
+                    .fc-day-today { background: #f0f7ff !important; }
+                    /* ボタン類 */
+                    .fc-button {
+                        background: #edf2f7 !important;
+                        border: none !important;
+                        color: #4a5568 !important;
+                        border-radius: 6px !important;
+                        font-size: 0.8rem !important;
+                        box-shadow: none !important;
+                    }
+                    .fc-button:hover { background: #e2e8f0 !important; }
+                    .fc-button-active { background: #667eea !important; color: #fff !important; }
+                """
+                cal_state = st_calendar(events=cal_events, options=cal_options, custom_css=cal_css, key="task_calendar_v4")
 
                 if cal_state and cal_state.get("callback"):
                     cb = cal_state["callback"]
