@@ -552,6 +552,127 @@ with tab_dashboard:
                         st.session_state.existing_row_index = None
 
 # =====================
+# =====================
+# ダイアログ定義
+# =====================
+@st.dialog("➕ 追加", width="large")
+def add_item_dialog():
+    d_tab1, d_tab2 = st.tabs(["📝 バックログに追加 (AI)", "📅 スケジュールに追加"])
+
+    with d_tab1:
+        st.caption("Claudeが優先度を判断してバックログに登録します")
+        for msg in st.session_state.get("task_messages", [])[-6:]:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+        if st.session_state.get("pending_task"):
+            ptask = st.session_state.pending_task
+            with st.container(border=True):
+                st.markdown(
+                    f"**タイトル:** {ptask.get('タイトル', '')}  \n"
+                    f"**優先度:** {ptask.get('優先度', '中')}  \n"
+                    f"**詳細:** {ptask.get('詳細', '')}  \n"
+                    f"**推定時間:** {ptask.get('推定時間', '-')} 分"
+                )
+            tc1, tc2 = st.columns(2)
+            with tc1:
+                if st.button("✅ バックログに追加", type="primary", key="d_add_task", use_container_width=True):
+                    add_backlog_item({
+                        "タイトル": ptask.get("タイトル", ""),
+                        "詳細": ptask.get("詳細", ""),
+                        "優先度": ptask.get("優先度", "中"),
+                    })
+                    st.session_state.pending_task = None
+                    st.session_state.task_messages = []
+                    st.rerun()
+            with tc2:
+                if st.button("❌ キャンセル", key="d_cancel_task", use_container_width=True):
+                    st.session_state.pending_task = None
+                    st.session_state.task_messages = []
+                    st.rerun()
+        with st.form("d_task_form", clear_on_submit=True):
+            task_text = st.text_area(
+                "タスクを入力",
+                placeholder="例：来週月曜日までに報告書を作成する（重要）",
+                height=80,
+                label_visibility="collapsed",
+            )
+            if st.form_submit_button("📤 Claudeに送信", type="primary", use_container_width=True):
+                if not task_text.strip():
+                    st.warning("タスクを入力してください。")
+                elif not api_key:
+                    st.error("Anthropic API キーが設定されていません。")
+                else:
+                    with st.spinner("Claudeが解析中..."):
+                        try:
+                            parsed = parse_task_input(task_text.strip(), api_key)
+                            st.session_state.pending_task = parsed
+                            msgs = st.session_state.get("task_messages", [])
+                            msgs.append({"role": "user", "content": task_text.strip()})
+                            if parsed.get("comment"):
+                                msgs.append({"role": "assistant", "content": parsed["comment"]})
+                            st.session_state.task_messages = msgs
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"解析エラー: {e}")
+
+    with d_tab2:
+        today_d = datetime.now(_JST).date().isoformat()
+        with st.form("d_sched_form", clear_on_submit=True):
+            sched_title = st.text_input("タイトル", placeholder="例：数学の授業")
+            cs, ce = st.columns(2)
+            with cs:
+                sched_start = st.time_input("開始", value=dt_time(9, 0), step=1800)
+            with ce:
+                sched_end = st.time_input("終了", value=dt_time(10, 0), step=1800)
+            sched_detail = st.text_input("詳細（任意）", placeholder="")
+            if st.form_submit_button("追加する", type="primary", use_container_width=True):
+                if sched_title:
+                    add_schedule_event({
+                        "タイトル": sched_title,
+                        "詳細": sched_detail,
+                        "日付": today_d,
+                        "開始時刻": sched_start.strftime("%H:%M"),
+                        "終了時刻": sched_end.strftime("%H:%M"),
+                    })
+                    st.rerun()
+                else:
+                    st.warning("タイトルを入力してください")
+
+
+@st.dialog("📅 スケジュールに追加")
+def schedule_from_backlog_dialog():
+    sitem = st.session_state.get("scheduling_item")
+    if not sitem:
+        st.error("アイテムが見つかりません")
+        return
+    st.markdown(f"**{sitem['タイトル']}** をスケジュールに追加")
+    sched_date = st.date_input("日付", value=datetime.now(_JST).date())
+    sc1, sc2 = st.columns(2)
+    with sc1:
+        start_t = st.time_input("開始時刻", value=dt_time(9, 0))
+    with sc2:
+        end_t = st.time_input("終了時刻", value=dt_time(10, 0))
+    b1, b2 = st.columns(2)
+    with b1:
+        if st.button("追加", type="primary", use_container_width=True):
+            add_schedule_event({
+                "タイトル": sitem["タイトル"],
+                "詳細": sitem.get("詳細", ""),
+                "日付": sched_date.isoformat(),
+                "開始時刻": start_t.strftime("%H:%M"),
+                "終了時刻": end_t.strftime("%H:%M"),
+                "バックログID": sitem.get("ID", ""),
+                "色": PRIORITY_COLOR.get(sitem.get("優先度", "中"), "#1976d2"),
+            })
+            st.session_state.scheduling_item = None
+            st.rerun()
+    with b2:
+        if st.button("キャンセル", use_container_width=True):
+            st.session_state.scheduling_item = None
+            st.rerun()
+
+
+# =====================
 # タスク管理タブ
 # =====================
 with tab_tasks:
@@ -718,29 +839,10 @@ with tab_tasks:
                     with c_card:
                         st.markdown(card_html, unsafe_allow_html=True)
 
-        # ─── スケジュール追加フォーム ───
-        st.markdown("<div style='margin-top:12px'>", unsafe_allow_html=True)
-        with st.expander("➕ スケジュールに追加"):
-            with st.form("add_sched_form", clear_on_submit=True):
-                sched_title = st.text_input("タイトル", placeholder="例：数学の授業")
-                cs, ce = st.columns(2)
-                with cs:
-                    sched_start = st.time_input("開始", value=dt_time(9, 0), step=1800)
-                with ce:
-                    sched_end = st.time_input("終了", value=dt_time(10, 0), step=1800)
-                sched_detail = st.text_input("詳細（任意）", placeholder="")
-                if st.form_submit_button("追加する", use_container_width=True):
-                    if sched_title:
-                        add_schedule_event({
-                            "タイトル": sched_title,
-                            "詳細": sched_detail,
-                            "日付": today_str,
-                            "開始時刻": sched_start.strftime("%H:%M"),
-                            "終了時刻": sched_end.strftime("%H:%M"),
-                        })
-                        st.rerun()
-                    else:
-                        st.warning("タイトルを入力してください")
+        # ─── 追加ボタン ───
+        st.markdown("<div style='margin-top:14px'>", unsafe_allow_html=True)
+        if st.button("➕ スケジュール・タスクを追加", use_container_width=True):
+            add_item_dialog()
         st.markdown("</div>", unsafe_allow_html=True)
 
         # GCal 診断（折りたたみ）
@@ -753,7 +855,14 @@ with tab_tasks:
                 st.write(f"- 時刻付き予定: {len(gcal_timed)} 件 / 終日予定: {len(gcal_allday)} 件")
 
         with right_col:
-            st.markdown("### 📝 バックログ")
+            rh1, rh2 = st.columns([3, 2])
+            with rh1:
+                st.markdown("### 📝 バックログ")
+            with rh2:
+                st.markdown("<div style='padding-top:8px'>", unsafe_allow_html=True)
+                if st.button("➕ 追加", type="primary", use_container_width=True, key="open_add_dialog"):
+                    add_item_dialog()
+                st.markdown("</div>", unsafe_allow_html=True)
             if not backlog_load_ok:
                 st.warning(f"バックログの読み込みに失敗しました: {backlog_error}")
             bl_filter = st.radio("表示", ["未着手・進行中", "完了"], horizontal=True, key="bl_filter")
@@ -786,6 +895,7 @@ with tab_tasks:
                         with hc2:
                             if st.button("📅", key=f"sched_{item['ID']}", help="スケジュールに追加"):
                                 st.session_state.scheduling_item = item.to_dict()
+                                schedule_from_backlog_dialog()
                             if item.get("状態") != "完了":
                                 if st.button("✅", key=f"done_{item['ID']}", help="完了にする"):
                                     update_backlog_status(item["ID"], "完了")
@@ -794,93 +904,9 @@ with tab_tasks:
                                 delete_backlog_item(item["ID"])
                                 st.rerun()
 
-            if st.session_state.scheduling_item:
-                sitem = st.session_state.scheduling_item
-                with st.container(border=True):
-                    st.markdown(f"**📅 スケジュールに追加：{sitem['タイトル']}**")
-                    sched_date = st.date_input("日付", value=datetime.now(_JST).date(), key="sched_date")
-                    sc1, sc2 = st.columns(2)
-                    with sc1:
-                        start_t = st.time_input("開始時刻", value=dt_time(9, 0), key="sched_start")
-                    with sc2:
-                        end_t = st.time_input("終了時刻", value=dt_time(10, 0), key="sched_end")
-                    btn1, btn2 = st.columns(2)
-                    with btn1:
-                        if st.button("追加", type="primary", key="sched_confirm", use_container_width=True):
-                            add_schedule_event({
-                                "タイトル": sitem["タイトル"],
-                                "詳細": sitem.get("詳細", ""),
-                                "日付": sched_date.isoformat(),
-                                "開始時刻": start_t.strftime("%H:%M"),
-                                "終了時刻": end_t.strftime("%H:%M"),
-                                "バックログID": sitem.get("ID", ""),
-                                "色": PRIORITY_COLOR.get(sitem.get("優先度", "中"), "#1976d2"),
-                            })
-                            st.session_state.scheduling_item = None
-                            st.rerun()
-                    with btn2:
-                        if st.button("キャンセル", key="sched_cancel", use_container_width=True):
-                            st.session_state.scheduling_item = None
-                            st.rerun()
-
-            st.divider()
-            st.markdown("### ➕ タスクを追加")
-            st.caption("Claudeが優先度を判断してバックログに追加します")
-
-            for msg in st.session_state.task_messages[-6:]:
-                with st.chat_message(msg["role"]):
-                    st.markdown(msg["content"])
-
-            if st.session_state.pending_task:
-                ptask = st.session_state.pending_task
-                with st.container(border=True):
-                    st.markdown(
-                        f"**タイトル:** {ptask.get('タイトル', '')}  \n"
-                        f"**優先度:** {ptask.get('優先度', '中')}  \n"
-                        f"**詳細:** {ptask.get('詳細', '')}  \n"
-                        f"**推定時間:** {ptask.get('推定時間', '-')} 分"
-                    )
-                tc1, tc2 = st.columns(2)
-                with tc1:
-                    if st.button("✅ バックログに追加", type="primary", key="add_task_confirm", use_container_width=True):
-                        add_backlog_item({
-                            "タイトル": ptask.get("タイトル", ""),
-                            "詳細": ptask.get("詳細", ""),
-                            "優先度": ptask.get("優先度", "中"),
-                        })
-                        st.session_state.pending_task = None
-                        st.session_state.task_messages = []
-                        st.rerun()
-                with tc2:
-                    if st.button("❌ キャンセル", key="cancel_task_confirm", use_container_width=True):
-                        st.session_state.pending_task = None
-                        st.session_state.task_messages = []
-                        st.rerun()
-
-            with st.form("task_form", clear_on_submit=True):
-                task_text = st.text_area(
-                    "タスクを入力",
-                    placeholder="例：来週月曜日までに報告書を作成する（重要）",
-                    height=80,
-                    label_visibility="collapsed",
-                )
-                if st.form_submit_button("📤 Claudeに送信", type="primary", use_container_width=True):
-                    if not task_text.strip():
-                        st.warning("タスクを入力してください。")
-                    elif not api_key:
-                        st.error("Anthropic API キーが設定されていません。")
-                    else:
-                        with st.spinner("Claudeが解析中..."):
-                            try:
-                                parsed = parse_task_input(task_text.strip(), api_key)
-                                st.session_state.pending_task = parsed
-                                st.session_state.task_messages.append({"role": "user", "content": task_text.strip()})
-                                comment = parsed.get("comment", "")
-                                if comment:
-                                    st.session_state.task_messages.append({"role": "assistant", "content": comment})
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"解析エラー: {e}")
+            if st.session_state.get("scheduling_item") and not st.session_state.get("_sched_dialog_open"):
+                st.session_state._sched_dialog_open = True
+                schedule_from_backlog_dialog()
 
 # =====================
 # バージョン情報タブ
