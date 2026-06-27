@@ -619,7 +619,7 @@ def add_item_dialog():
                                 msgs.append({"role": "assistant", "content": parsed["comment"]})
                             st.session_state.task_messages = msgs
                             st.session_state.pending_task = parsed
-                            st.rerun()
+                            st.rerun(scope="fragment")  # ダイアログを閉じずに確認画面を表示
                         except Exception as e:
                             st.error(f"解析エラー: {e}")
 
