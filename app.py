@@ -23,8 +23,8 @@ except ImportError:
     _calendar_ok = False
 
 st.set_page_config(
-    page_title="健康管理ダッシュボード",
-    page_icon="💪",
+    page_title="My Life Dashboard",
+    page_icon="🌟",
     layout="wide",
 )
 
@@ -56,7 +56,7 @@ def save_config(cfg: dict) -> None:
         json.dump(cfg, f, ensure_ascii=False, indent=2)
 
 
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.5.0"
 
 if "config" not in st.session_state:
     st.session_state.config = load_config()
@@ -169,9 +169,9 @@ with st.sidebar:
 
     api_key = st.secrets.get("ANTHROPIC_API_KEY", "")
 
-st.title("💪 健康管理ダッシュボード")
+st.title("🌟 My Life Dashboard")
 
-tab_dashboard, tab_input, tab_tasks, tab_info = st.tabs(["📊 ダッシュボード", "📝 データ入力", "📋 タスク管理", "ℹ️ バージョン情報"])
+tab_dashboard, tab_tasks, tab_info = st.tabs(["📊 ダッシュボード", "📋 タスク管理", "ℹ️ バージョン情報"])
 
 # =====================
 # ダッシュボードタブ
@@ -430,20 +430,7 @@ with tab_dashboard:
 
             st.caption("データは5分間キャッシュされます。最新データを反映するにはサイドバーの「再読み込み」ボタンを押してください。")
 
-# =====================
-# データ入力タブ
-# =====================
-with tab_input:
-    if st.session_state.save_success:
-        st.success("スプレッドシートに保存しました！ダッシュボードのデータを更新しました。")
-        st.session_state.save_success = False
-
-    st.subheader("📝 今日の記録を入力")
-    st.markdown(
-        "体重・体脂肪・朝食・昼食・夕食・飲酒・運動の内容を自由に入力してください。"
-        "Claudeがカロリー・PFCを推定し、スプレッドシートに記録します。"
-    )
-
+    # ─── 今日の記録を入力 ───
     if "chat_messages" not in st.session_state:
         st.session_state.chat_messages = []
     if "parsed_data" not in st.session_state:
@@ -451,9 +438,60 @@ with tab_input:
     if "existing_row_index" not in st.session_state:
         st.session_state.existing_row_index = None
 
+    if st.session_state.save_success:
+        st.toast("スプレッドシートに保存しました！", icon="✅")
+        st.session_state.save_success = False
+
+    st.divider()
+    st.subheader("📝 今日の記録を入力")
+    st.markdown(
+        "体重・体脂肪・朝食・昼食・夕食・飲酒・運動の内容を自由に入力してください。"
+        "Claudeがカロリー・PFCを推定し、スプレッドシートに記録します。"
+    )
+
     for msg in st.session_state.chat_messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
+
+    if st.session_state.parsed_data is not None:
+        col_save, col_cancel = st.columns([1, 5])
+        with col_save:
+            if st.button("✅ スプレッドシートに保存", type="primary"):
+                try:
+                    p = st.session_state.parsed_data
+                    row = {
+                        "日付": p.get("日付", ""),
+                        "体重": p.get("体重", ""),
+                        "体脂肪": p.get("体脂肪", ""),
+                        "運動の有無": p.get("運動の有無", ""),
+                        "歩数": p.get("歩数", ""),
+                        "総カロリー": p.get("総カロリー", ""),
+                        "総タンパク質": p.get("総タンパク質", ""),
+                        "総脂質": p.get("総脂質", ""),
+                        "総炭水化物": p.get("総炭水化物", ""),
+                        "朝食Cal": p.get("朝食Cal", ""),
+                        "昼食Cal": p.get("昼食Cal", ""),
+                        "夕食Cal": p.get("夕食Cal", ""),
+                        "食事内容": p.get("食事内容", ""),
+                        "メモ": p.get("メモ", ""),
+                    }
+                    existing_idx = st.session_state.get("existing_row_index")
+                    if existing_idx:
+                        update_row(existing_idx, row)
+                    else:
+                        append_row(row)
+                    st.session_state.parsed_data = None
+                    st.session_state.existing_row_index = None
+                    st.session_state.save_success = True
+                    st.cache_data.clear()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"保存に失敗しました: {e}")
+        with col_cancel:
+            if st.button("❌ キャンセル"):
+                st.session_state.parsed_data = None
+                st.session_state.existing_row_index = None
+                st.rerun()
 
     user_input = st.chat_input("例：体重73.5kg、体脂肪26%、朝はご飯とみそ汁、昼はラーメン、夜は焼き肉、ビール1杯、スクワット10分")
 
@@ -508,46 +546,6 @@ with tab_input:
                         st.error(f"解析に失敗しました: {e}")
                         st.session_state.parsed_data = None
                         st.session_state.existing_row_index = None
-
-    if st.session_state.parsed_data is not None:
-        col_save, col_cancel = st.columns([1, 5])
-        with col_save:
-            if st.button("✅ スプレッドシートに保存", type="primary"):
-                try:
-                    p = st.session_state.parsed_data
-                    row = {
-                        "日付": p.get("日付", ""),
-                        "体重": p.get("体重", ""),
-                        "体脂肪": p.get("体脂肪", ""),
-                        "運動の有無": p.get("運動の有無", ""),
-                        "歩数": p.get("歩数", ""),
-                        "総カロリー": p.get("総カロリー", ""),
-                        "総タンパク質": p.get("総タンパク質", ""),
-                        "総脂質": p.get("総脂質", ""),
-                        "総炭水化物": p.get("総炭水化物", ""),
-                        "朝食Cal": p.get("朝食Cal", ""),
-                        "昼食Cal": p.get("昼食Cal", ""),
-                        "夕食Cal": p.get("夕食Cal", ""),
-                        "食事内容": p.get("食事内容", ""),
-                        "メモ": p.get("メモ", ""),
-                    }
-                    existing_idx = st.session_state.get("existing_row_index")
-                    if existing_idx:
-                        update_row(existing_idx, row)
-                    else:
-                        append_row(row)
-                    st.session_state.parsed_data = None
-                    st.session_state.existing_row_index = None
-                    st.session_state.save_success = True
-                    st.cache_data.clear()
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"保存に失敗しました: {e}")
-        with col_cancel:
-            if st.button("❌ キャンセル"):
-                st.session_state.parsed_data = None
-                st.session_state.existing_row_index = None
-                st.rerun()
 
 # =====================
 # タスク管理タブ
@@ -776,7 +774,7 @@ with tab_tasks:
 with tab_info:
     st.subheader("ℹ️ バージョン情報")
     st.markdown(f"**バージョン:** {APP_VERSION}")
-    st.markdown("**最終更新:** 2026-06-27　（v1.4.0: タスク管理ページ追加）")
+    st.markdown("**最終更新:** 2026-06-27　（v1.5.0: My Life Dashboard）")
 
     st.divider()
     st.markdown("### 使用技術")
@@ -798,6 +796,7 @@ with tab_info:
     st.divider()
     st.markdown("### 更新履歴")
     history = [
+        ("1.5.0", "2026-06-27", "アプリ名を「My Life Dashboard」に変更、データ入力をダッシュボードタブに統合"),
         ("1.4.0", "2026-06-27", "タスク管理ページ追加：バックログ管理・日次スケジュール・Claude AIタスク入力"),
         ("1.3.0", "2026-06-27", "摂取目標ダイアログのレイアウト改善、脂質・炭水化物の目標設定を追加"),
         ("1.2.0", "2026-06-27", "摂取目標の設定ダイアログ追加、設定の永続化、保存後の自動更新"),
