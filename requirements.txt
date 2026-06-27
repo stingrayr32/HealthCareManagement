@@ -1,8 +1,8 @@
-streamlit
+streamlit==1.50.0
 gspread
 google-auth
 google-api-python-client
 pandas
 plotly
 anthropic
-streamlit-calendar
+streamlit-calendar==1.4.0

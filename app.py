@@ -647,9 +647,6 @@ with tab_tasks:
             if not _calendar_ok:
                 st.warning("streamlit-calendar が見つかりません。`pip install streamlit-calendar` を実行してください。")
             else:
-                st.write(f"[debug] today={today_str} | events={cal_events} | gcal_err={gcal_error}")
-                # 最小オプションで描画テスト
-                st_calendar(events=[], options={"initialView": "timeGridDay", "initialDate": today_str, "height": 400}, key="cal_min_test")
                 cal_options = {
                     "initialView": "timeGridDay",
                     "initialDate": today_str,
@@ -666,7 +663,7 @@ with tab_tasks:
                     "locale": "ja",
                     "allDaySlot": False,
                 }
-                cal_state = st_calendar(events=cal_events, options=cal_options, key="task_calendar_v3")
+                cal_state = st_calendar(events=cal_events, options=cal_options, key="task_calendar_v4")
 
                 if cal_state and cal_state.get("callback"):
                     cb = cal_state["callback"]
