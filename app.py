@@ -755,9 +755,16 @@ with tab_tasks:
         except Exception as e:
             gcal_error = str(e)
 
-    untimed_tasks = [ev for ev in local_events if not ev.get("has_time")]
-    timed_local   = [ev for ev in local_events if ev.get("has_time")]
-    all_events    = sorted(timed_local + gcal_timed, key=lambda x: x["start"])
+    # 時刻なしは末尾に並ぶよう "99:99" をソートキーに使用
+    for ev in local_events:
+        if not ev.get("has_time"):
+            ev["_sort_key"] = "99:99"
+        else:
+            ev["_sort_key"] = ev["start"]
+    for ev in gcal_timed:
+        ev["_sort_key"] = ev["start"]
+
+    all_events = sorted(local_events + gcal_timed, key=lambda x: x["_sort_key"])
 
     left_col, right_col = st.columns([6, 5], gap="medium")
 
@@ -776,50 +783,13 @@ with tab_tasks:
         if gcal_allday:
             st.info("📅 終日予定: " + "　/　".join(gcal_allday))
 
-        # ─── 時刻未定タスク ───
-        if untimed_tasks:
-            st.markdown("**📌 本日のタスク**")
-            for ev in untimed_tasks:
-                done_key = f"sched_done_{ev['id']}"
-                if done_key not in st.session_state:
-                    st.session_state[done_key] = False
-                is_done = st.session_state[done_key]
-                title_style = "color:#b0b8c1;text-decoration:line-through;" if is_done else "color:#2d3748;font-weight:600;"
-                task_html = f"""
-<div style="
-    border-left:4px solid {'#cbd5e0' if is_done else ev['color']};
-    background:{'#f4f4f4' if is_done else '#fafafa'};
-    border-radius:0 8px 8px 0;
-    padding:8px 12px;
-    margin:4px 0;
-    box-shadow:0 1px 3px rgba(0,0,0,0.04);
-">
-  <span style="font-size:0.88rem;{title_style}">{'✅ ' if is_done else '📌 '}{ev['title']}</span>
-</div>"""
-                tc_chk, tc_card, tc_btn = st.columns([1, 10, 1])
-                with tc_chk:
-                    st.markdown("<div style='padding-top:12px'>", unsafe_allow_html=True)
-                    st.checkbox("", key=done_key, label_visibility="collapsed")
-                    st.markdown("</div>", unsafe_allow_html=True)
-                with tc_card:
-                    st.markdown(task_html, unsafe_allow_html=True)
-                with tc_btn:
-                    st.markdown("<div style='padding-top:10px'>", unsafe_allow_html=True)
-                    if st.button("🗑", key=f"del_sched_{ev['id']}", help="削除"):
-                        delete_schedule_event(ev["id"])
-                        load_schedule.clear()
-                        st.rerun()
-                    st.markdown("</div>", unsafe_allow_html=True)
-
-        # ─── 時刻付きスケジュールカード ───
-        if not all_events and not untimed_tasks:
+        # ─── スケジュールカード（時刻昇順・時刻未定は末尾）───
+        if not all_events:
             st.markdown(
                 '<div style="text-align:center;color:#a0aec0;padding:40px 0;font-size:0.9rem;">本日の予定はありません</div>',
                 unsafe_allow_html=True,
             )
-        elif all_events:
-            if untimed_tasks:
-                st.markdown("**🕐 スケジュール**")
+        else:
             for ev in all_events:
                 done_key = f"sched_done_{ev['id']}"
                 if done_key not in st.session_state:
@@ -855,7 +825,7 @@ with tab_tasks:
     transition:all .2s;
 ">
   <span style="font-size:0.72rem;font-weight:500;letter-spacing:.3px;{time_style}">
-    {ev['start']} – {ev['end']}
+    {f"{ev['start']} – {ev['end']}" if ev.get('has_time', True) else '時刻未定'}
   </span>
   <p style="margin:3px 0 0;font-size:0.88rem;font-weight:600;{title_style}">
     {icon} {ev['title']}
