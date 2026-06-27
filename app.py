@@ -655,7 +655,6 @@ with tab_tasks:
                     "height": 580,
                     "locale": "ja",
                     "allDaySlot": True,
-                    "timeZone": "Asia/Tokyo",
                 }
                 cal_state = st_calendar(events=cal_events, options=cal_options, key="task_calendar")
 

@@ -58,9 +58,8 @@ def to_calendar_events(items: list[dict]) -> list[dict]:
             "end": end_str,
             "color": "#0F9D58",
             "editable": False,
+            "allDay": is_all_day,
         }
-        if is_all_day:
-            event["allDay"] = True
         events.append(event)
     return events
 
