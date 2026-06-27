@@ -889,28 +889,34 @@ with tab_tasks:
             else:
                 for _, item in view_df.iterrows():
                     color = PRIORITY_COLOR.get(item.get("優先度", "中"), "#888")
+                    is_done = item.get("状態") == "完了"
                     with st.container(border=True):
-                        hc1, hc2 = st.columns([8, 3])
-                        with hc1:
+                        title_col, btn_col = st.columns([7, 3])
+                        with title_col:
                             st.markdown(
                                 f'<span style="background:{color};color:white;padding:1px 8px;'
                                 f'border-radius:10px;font-size:0.75em;font-weight:bold">'
-                                f'{item.get("優先度", "中")}</span>　**{item["タイトル"]}**',
+                                f'{item.get("優先度", "中")}</span>　'
+                                + (f'~~{item["タイトル"]}~~' if is_done else f'**{item["タイトル"]}**'),
                                 unsafe_allow_html=True,
                             )
-                            if item.get("詳細"):
+                            if item.get("詳細") and not is_done:
                                 st.caption(item["詳細"])
-                        with hc2:
-                            if st.button("📅", key=f"sched_{item['ID']}", help="スケジュールに追加"):
-                                st.session_state.scheduling_item = item.to_dict()
-                                schedule_from_backlog_dialog()
-                            if item.get("状態") != "完了":
-                                if st.button("✅", key=f"done_{item['ID']}", help="完了にする"):
-                                    update_backlog_status(item["ID"], "完了")
+                        with btn_col:
+                            b1, b2, b3 = st.columns(3)
+                            with b1:
+                                if st.button("📅", key=f"sched_{item['ID']}", help="スケジュールに追加", use_container_width=True):
+                                    st.session_state.scheduling_item = item.to_dict()
+                                    schedule_from_backlog_dialog()
+                            with b2:
+                                if not is_done:
+                                    if st.button("✅", key=f"done_{item['ID']}", help="完了にする", use_container_width=True):
+                                        update_backlog_status(item["ID"], "完了")
+                                        st.rerun()
+                            with b3:
+                                if st.button("🗑", key=f"del_bl_{item['ID']}", help="削除", use_container_width=True):
+                                    delete_backlog_item(item["ID"])
                                     st.rerun()
-                            if st.button("🗑️", key=f"del_bl_{item['ID']}", help="削除"):
-                                delete_backlog_item(item["ID"])
-                                st.rerun()
 
             if st.session_state.get("scheduling_item") and not st.session_state.get("_sched_dialog_open"):
                 st.session_state._sched_dialog_open = True
