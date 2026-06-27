@@ -43,10 +43,10 @@ def save_config(cfg: dict) -> None:
         json.dump(cfg, f, ensure_ascii=False, indent=2)
 
 
+APP_VERSION = "1.3.0"
+
 if "config" not in st.session_state:
     st.session_state.config = load_config()
-if "sidebar_visible" not in st.session_state:
-    st.session_state.sidebar_visible = True
 if "save_success" not in st.session_state:
     st.session_state.save_success = False
 
@@ -126,12 +126,6 @@ def intake_dialog():
 # =====================
 # サイドバー
 # =====================
-if not st.session_state.sidebar_visible:
-    st.markdown(
-        "<style>section[data-testid='stSidebar']{display:none}</style>",
-        unsafe_allow_html=True,
-    )
-
 with st.sidebar:
     st.header("📅 期間フィルター")
     filter_days = st.selectbox(
@@ -162,21 +156,9 @@ with st.sidebar:
 
     api_key = st.secrets.get("ANTHROPIC_API_KEY", "")
 
-# =====================
-# タイトルとサイドバー切り替え
-# =====================
-title_col, toggle_col = st.columns([8, 1])
-with title_col:
-    st.title("💪 健康管理ダッシュボード")
-with toggle_col:
-    st.write("")
-    st.write("")
-    toggle_label = "◀ 隠す" if st.session_state.sidebar_visible else "▶ 表示"
-    if st.button(toggle_label, key="sidebar_toggle"):
-        st.session_state.sidebar_visible = not st.session_state.sidebar_visible
-        st.rerun()
+st.title("💪 健康管理ダッシュボード")
 
-tab_dashboard, tab_input = st.tabs(["📊 ダッシュボード", "📝 データ入力"])
+tab_dashboard, tab_input, tab_info = st.tabs(["📊 ダッシュボード", "📝 データ入力", "ℹ️ バージョン情報"])
 
 # =====================
 # ダッシュボードタブ
@@ -553,3 +535,40 @@ with tab_input:
                 st.session_state.parsed_data = None
                 st.session_state.existing_row_index = None
                 st.rerun()
+
+# =====================
+# バージョン情報タブ
+# =====================
+with tab_info:
+    st.subheader("ℹ️ バージョン情報")
+    st.markdown(f"**バージョン:** {APP_VERSION}")
+    st.markdown("**最終更新:** 2026-06-27")
+
+    st.divider()
+    st.markdown("### 使用技術")
+    tech = {
+        "フレームワーク": "[Streamlit](https://streamlit.io)",
+        "データストア": "[Google Sheets](https://workspace.google.com/products/sheets/) / gspread",
+        "AI解析": "[Anthropic Claude API](https://www.anthropic.com/) (claude-opus-4-8)",
+        "グラフ": "[Plotly](https://plotly.com/python/)",
+        "ホスティング": "[Streamlit Community Cloud](https://share.streamlit.io)",
+    }
+    for k, v in tech.items():
+        st.markdown(f"- **{k}**: {v}")
+
+    st.divider()
+    st.markdown("### リンク")
+    st.markdown("- [GitHubリポジトリ](https://github.com/stingrayr32/HealthCareManagement)")
+    st.markdown("- [Google スプレッドシート](https://docs.google.com/spreadsheets/d/1zfuPXxXN3nvaIsxo__4kWtTx7Pm3FFgxPSySULpMGXs)")
+
+    st.divider()
+    st.markdown("### 更新履歴")
+    history = [
+        ("1.3.0", "2026-06-27", "摂取目標ダイアログのレイアウト改善、脂質・炭水化物の目標設定を追加"),
+        ("1.2.0", "2026-06-27", "摂取目標の設定ダイアログ追加、設定の永続化、保存後の自動更新"),
+        ("1.1.0", "2026-06-27", "チャット形式のデータ入力機能を追加（Claude AI連携）"),
+        ("1.0.0", "2026-06-26", "初回リリース：体重・体脂肪・カロリー・PFC・歩数のダッシュボード"),
+    ]
+    for ver, dt, desc in history:
+        st.markdown(f"**v{ver}** `{dt}`  \n{desc}")
+        st.write("")
