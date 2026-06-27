@@ -641,6 +641,7 @@ with tab_tasks:
                 st.warning("streamlit-calendar が見つかりません。`pip install streamlit-calendar` を実行してください。")
             else:
                 st.caption(f"[debug] イベント数={len(cal_events)}, calendar_ok={_calendar_ok}")
+                st.json(cal_events)  # イベントの中身を表示
                 cal_options = {
                     "initialView": "timeGridDay",
                     "initialDate": today_str,
@@ -657,6 +658,10 @@ with tab_tasks:
                     "locale": "ja",
                     "allDaySlot": False,
                 }
+                # まずイベントなしで描画テスト
+                st.caption("[debug] イベントなしでカレンダーを描画:")
+                st_calendar(events=[], options=cal_options, key="task_calendar_empty")
+                st.caption("[debug] イベントありでカレンダーを描画:")
                 cal_state = st_calendar(events=cal_events, options=cal_options, key="task_calendar_v2")
 
                 if cal_state and cal_state.get("callback"):
