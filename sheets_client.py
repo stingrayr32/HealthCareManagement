@@ -86,14 +86,27 @@ def find_row_by_date(date_str: str) -> tuple[int | None, dict | None]:
     return None, None
 
 
+def _to_cell(v) -> str:
+    """None/NaN を空文字に変換し、それ以外は文字列化する。"""
+    if v is None:
+        return ""
+    try:
+        import math
+        if isinstance(v, float) and math.isnan(v):
+            return ""
+    except Exception:
+        pass
+    return str(v)
+
+
 def append_row(row_data: dict) -> None:
     sheet = _get_sheet()
-    row = [str(row_data.get(col, "")) for col in COLUMNS]
+    row = [_to_cell(row_data.get(col)) for col in COLUMNS]
     sheet.append_row(row, value_input_option="USER_ENTERED")
 
 
 def update_row(sheet_row_index: int, row_data: dict) -> None:
     """指定した行番号（1始まり）の行をまるごと更新する。"""
     sheet = _get_sheet()
-    row = [str(row_data.get(col, "")) for col in COLUMNS]
+    row = [_to_cell(row_data.get(col)) for col in COLUMNS]
     sheet.update(f"A{sheet_row_index}", [row], value_input_option="USER_ENTERED")
