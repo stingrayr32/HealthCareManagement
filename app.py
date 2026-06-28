@@ -755,16 +755,18 @@ with tab_tasks:
         except Exception as e:
             gcal_error = str(e)
 
-    # 時刻なしは末尾に並ぶよう "99:99" をソートキーに使用
-    for ev in local_events:
-        if not ev.get("has_time"):
-            ev["_sort_key"] = "99:99"
-        else:
-            ev["_sort_key"] = ev["start"]
-    for ev in gcal_timed:
-        ev["_sort_key"] = ev["start"]
+    def _time_to_min(t: str) -> int:
+        """'HH:MM' を分数に変換。パース失敗や空文字は 9999（末尾）。"""
+        try:
+            h, m = t.split(":")
+            return int(h) * 60 + int(m)
+        except Exception:
+            return 9999
 
-    all_events = sorted(local_events + gcal_timed, key=lambda x: x["_sort_key"])
+    all_events = sorted(
+        local_events + gcal_timed,
+        key=lambda x: _time_to_min(x.get("start", "")),
+    )
 
     left_col, right_col = st.columns([6, 5], gap="medium")
 
