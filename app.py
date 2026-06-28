@@ -350,6 +350,22 @@ with tab_dashboard:
             fig_weight.update_yaxes(title_text="体脂肪率 (%)", secondary_y=True)
             st.plotly_chart(fig_weight, use_container_width=True)
 
+            # ─── 保存デバッグ情報 ───
+            if st.session_state.get("health_debug"):
+                _dbg = st.session_state.health_debug
+                with st.expander("🔍 保存デバッグ情報（確認後に閉じてください）", expanded=True):
+                    st.write(f"**操作:** {_dbg['op']}")
+                    st.write("**送信データ:**")
+                    st.json(_dbg["row"])
+                    if _dbg["error"]:
+                        st.error("**書き込みエラー:**")
+                        st.code(_dbg["error"])
+                    else:
+                        st.success("書き込み関数は正常終了しました")
+                    if st.button("デバッグ情報を閉じる"):
+                        st.session_state.health_debug = None
+                        st.rerun()
+
             # ─── 今日の記録を入力 ───
             st.divider()
             st.subheader("📝 今日の記録を入力")
@@ -392,10 +408,24 @@ with tab_dashboard:
                                     "食事内容": p.get("食事内容", ""), "メモ": p.get("メモ", ""),
                                 }
                                 existing_idx = st.session_state.get("existing_row_index")
-                                if existing_idx:
-                                    update_row(existing_idx, row)
-                                else:
-                                    append_row(row)
+                                import traceback
+                                try:
+                                    if existing_idx:
+                                        update_row(existing_idx, row)
+                                        _op = f"update_row(行={existing_idx})"
+                                    else:
+                                        append_row(row)
+                                        _op = "append_row(新規)"
+                                    st.session_state.health_debug = {
+                                        "op": _op, "row": row, "error": None
+                                    }
+                                except Exception as _we:
+                                    st.session_state.health_debug = {
+                                        "op": "失敗", "row": row,
+                                        "error": traceback.format_exc()
+                                    }
+                                    st.error(f"書き込み失敗: {_we}")
+                                    st.stop()
                                 # 保存内容を session_state に保持してグラフに即時反映
                                 st.session_state.health_just_saved = row
                                 load_data.clear()
@@ -405,7 +435,9 @@ with tab_dashboard:
                                 st.session_state.save_success = True
                                 st.rerun()
                             except Exception as e:
+                                import traceback
                                 st.error(f"保存に失敗しました: {e}")
+                                st.code(traceback.format_exc())
                     with sv2:
                         if st.button("❌ キャンセル", use_container_width=True):
                             st.session_state.parsed_data = None
