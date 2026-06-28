@@ -181,6 +181,17 @@ tab_dashboard, tab_tasks, tab_info = st.tabs(["🏃 Health", "📋 ToDo", "ℹ�
 # ダッシュボードタブ
 # =====================
 with tab_dashboard:
+    # session_state 初期化
+    if "chat_messages" not in st.session_state:
+        st.session_state.chat_messages = []
+    if "parsed_data" not in st.session_state:
+        st.session_state.parsed_data = None
+    if "existing_row_index" not in st.session_state:
+        st.session_state.existing_row_index = None
+    if st.session_state.save_success:
+        st.toast("スプレッドシートに保存しました！", icon="✅")
+        st.session_state.save_success = False
+
     try:
         df = load_data()
     except Exception as e:
@@ -313,6 +324,89 @@ with tab_dashboard:
             fig_weight.update_yaxes(title_text="体脂肪率 (%)", secondary_y=True)
             st.plotly_chart(fig_weight, use_container_width=True)
 
+            # ─── 今日の記録を入力 ───
+            st.divider()
+            st.subheader("📝 今日の記録を入力")
+            st.markdown(
+                "体重・体脂肪・朝食・昼食・夕食・飲酒・運動の内容を自由に入力してください。"
+                "Claudeがカロリー・PFCを推定し、スプレッドシートに記録します。"
+            )
+
+            for msg in st.session_state.chat_messages:
+                with st.chat_message(msg["role"]):
+                    st.markdown(msg["content"])
+
+            if st.session_state.parsed_data is not None:
+                p = st.session_state.parsed_data
+                preview = {
+                    "日付": p.get("日付", ""), "体重 (kg)": p.get("体重", ""),
+                    "体脂肪率 (%)": p.get("体脂肪", ""), "運動": p.get("運動の有無", ""),
+                    "歩数": p.get("歩数", ""), "朝食Cal": p.get("朝食Cal", ""),
+                    "昼食Cal": p.get("昼食Cal", ""), "夕食Cal": p.get("夕食Cal", ""),
+                    "総カロリー": p.get("総カロリー", ""), "P (g)": p.get("総タンパク質", ""),
+                    "F (g)": p.get("総脂質", ""), "C (g)": p.get("総炭水化物", ""),
+                    "食事内容": p.get("食事内容", ""), "メモ": p.get("メモ", ""),
+                }
+                with st.container(border=True):
+                    st.dataframe(
+                        pd.DataFrame([preview]).T.rename(columns={0: "値"}),
+                        use_container_width=True,
+                    )
+                    sv1, sv2 = st.columns([3, 1])
+                    with sv1:
+                        if st.button("💾 スプレッドシートに保存", type="primary", use_container_width=True):
+                            try:
+                                row = {
+                                    "日付": p.get("日付", ""), "体重": p.get("体重", ""),
+                                    "体脂肪": p.get("体脂肪", ""), "運動の有無": p.get("運動の有無", ""),
+                                    "歩数": p.get("歩数", ""), "総カロリー": p.get("総カロリー", ""),
+                                    "総タンパク質": p.get("総タンパク質", ""), "総脂質": p.get("総脂質", ""),
+                                    "総炭水化物": p.get("総炭水化物", ""), "朝食Cal": p.get("朝食Cal", ""),
+                                    "昼食Cal": p.get("昼食Cal", ""), "夕食Cal": p.get("夕食Cal", ""),
+                                    "食事内容": p.get("食事内容", ""), "メモ": p.get("メモ", ""),
+                                }
+                                existing_idx = st.session_state.get("existing_row_index")
+                                if existing_idx:
+                                    update_row(existing_idx, row)
+                                else:
+                                    append_row(row)
+                                st.session_state.parsed_data = None
+                                st.session_state.existing_row_index = None
+                                st.session_state.chat_messages = []
+                                st.session_state.save_success = True
+                                st.cache_data.clear()
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"保存に失敗しました: {e}")
+                    with sv2:
+                        if st.button("❌ キャンセル", use_container_width=True):
+                            st.session_state.parsed_data = None
+                            st.session_state.existing_row_index = None
+                            st.rerun()
+
+            user_input = st.chat_input("例：体重73.5kg、体脂肪26%、朝はご飯とみそ汁、昼はラーメン、夜は焼き肉、ビール1杯、スクワット10分")
+
+            if user_input:
+                st.session_state.chat_messages.append({"role": "user", "content": user_input})
+                if not api_key:
+                    st.session_state.chat_messages.append({"role": "assistant", "content": "Anthropic APIキーが設定されていません。"})
+                else:
+                    try:
+                        _today = datetime.now(_JST).strftime("%Y-%m-%d")
+                        existing_row_index, existing_data = find_row_by_date(_today)
+                        parsed = parse_health_input(user_input, api_key, _today, existing_data=existing_data)
+                        st.session_state.parsed_data = parsed
+                        st.session_state.existing_row_index = existing_row_index
+                        comment = parsed.get("comment", "解析が完了しました。内容を確認して保存してください。")
+                        if existing_row_index:
+                            comment += "\n\n📌 本日のデータが既に存在します。既存データとマージした結果です。"
+                        st.session_state.chat_messages.append({"role": "assistant", "content": comment})
+                    except Exception as e:
+                        st.session_state.chat_messages.append({"role": "assistant", "content": f"解析に失敗しました: {e}"})
+                        st.session_state.parsed_data = None
+                        st.session_state.existing_row_index = None
+                st.rerun()
+
             # --- 本日のカロリー・PFC ---
             def _colored_card(label, value_str, color, status):
                 return f"""<div style="text-align:center;padding:4px 2px">
@@ -433,123 +527,6 @@ with tab_dashboard:
             st.dataframe(df_table, use_container_width=True, height=300)
 
             st.caption("データは5分間キャッシュされます。最新データを反映するにはサイドバーの「再読み込み」ボタンを押してください。")
-
-    # ─── 今日の記録を入力 ───
-    if "chat_messages" not in st.session_state:
-        st.session_state.chat_messages = []
-    if "parsed_data" not in st.session_state:
-        st.session_state.parsed_data = None
-    if "existing_row_index" not in st.session_state:
-        st.session_state.existing_row_index = None
-
-    if st.session_state.save_success:
-        st.toast("スプレッドシートに保存しました！", icon="✅")
-        st.session_state.save_success = False
-
-    st.divider()
-    st.subheader("📝 今日の記録を入力")
-    st.markdown(
-        "体重・体脂肪・朝食・昼食・夕食・飲酒・運動の内容を自由に入力してください。"
-        "Claudeがカロリー・PFCを推定し、スプレッドシートに記録します。"
-    )
-
-    for msg in st.session_state.chat_messages:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-
-    if st.session_state.parsed_data is not None:
-        col_save, col_cancel = st.columns([1, 5])
-        with col_save:
-            if st.button("✅ スプレッドシートに保存", type="primary"):
-                try:
-                    p = st.session_state.parsed_data
-                    row = {
-                        "日付": p.get("日付", ""),
-                        "体重": p.get("体重", ""),
-                        "体脂肪": p.get("体脂肪", ""),
-                        "運動の有無": p.get("運動の有無", ""),
-                        "歩数": p.get("歩数", ""),
-                        "総カロリー": p.get("総カロリー", ""),
-                        "総タンパク質": p.get("総タンパク質", ""),
-                        "総脂質": p.get("総脂質", ""),
-                        "総炭水化物": p.get("総炭水化物", ""),
-                        "朝食Cal": p.get("朝食Cal", ""),
-                        "昼食Cal": p.get("昼食Cal", ""),
-                        "夕食Cal": p.get("夕食Cal", ""),
-                        "食事内容": p.get("食事内容", ""),
-                        "メモ": p.get("メモ", ""),
-                    }
-                    existing_idx = st.session_state.get("existing_row_index")
-                    if existing_idx:
-                        update_row(existing_idx, row)
-                    else:
-                        append_row(row)
-                    st.session_state.parsed_data = None
-                    st.session_state.existing_row_index = None
-                    st.session_state.save_success = True
-                    st.cache_data.clear()
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"保存に失敗しました: {e}")
-        with col_cancel:
-            if st.button("❌ キャンセル"):
-                st.session_state.parsed_data = None
-                st.session_state.existing_row_index = None
-                st.rerun()
-
-    user_input = st.chat_input("例：体重73.5kg、体脂肪26%、朝はご飯とみそ汁、昼はラーメン、夜は焼き肉、ビール1杯、スクワット10分")
-
-    if user_input:
-        st.session_state.chat_messages.append({"role": "user", "content": user_input})
-        with st.chat_message("user"):
-            st.markdown(user_input)
-
-        if not api_key:
-            with st.chat_message("assistant"):
-                st.error("Anthropic API キーが設定されていません。")
-        else:
-            with st.chat_message("assistant"):
-                with st.spinner("Claudeが解析中..."):
-                    try:
-                        today_str = datetime.now(_JST).strftime("%Y-%m-%d")
-                        existing_row_index, existing_data = find_row_by_date(today_str)
-                        parsed = parse_health_input(
-                            user_input, api_key, today_str,
-                            existing_data=existing_data,
-                        )
-                        st.session_state.parsed_data = parsed
-                        st.session_state.existing_row_index = existing_row_index
-
-                        preview = {
-                            "日付": parsed.get("日付", ""),
-                            "体重 (kg)": parsed.get("体重", ""),
-                            "体脂肪率 (%)": parsed.get("体脂肪", ""),
-                            "運動": parsed.get("運動の有無", ""),
-                            "歩数": parsed.get("歩数", ""),
-                            "朝食Cal": parsed.get("朝食Cal", ""),
-                            "昼食Cal": parsed.get("昼食Cal", ""),
-                            "夕食Cal": parsed.get("夕食Cal", ""),
-                            "総カロリー": parsed.get("総カロリー", ""),
-                            "P (g)": parsed.get("総タンパク質", ""),
-                            "F (g)": parsed.get("総脂質", ""),
-                            "C (g)": parsed.get("総炭水化物", ""),
-                            "食事内容": parsed.get("食事内容", ""),
-                            "メモ": parsed.get("メモ", ""),
-                        }
-                        comment = parsed.get("comment", "")
-                        if comment:
-                            st.markdown(comment)
-                        if existing_row_index:
-                            st.info("本日のデータが既に存在します。既存データとマージした結果を表示しています。")
-                        st.markdown("以下の内容を確認して「保存」ボタンを押してください。")
-                        st.dataframe(
-                            pd.DataFrame([preview]).T.rename(columns={0: "値"}),
-                            use_container_width=True,
-                        )
-                    except Exception as e:
-                        st.error(f"解析に失敗しました: {e}")
-                        st.session_state.parsed_data = None
-                        st.session_state.existing_row_index = None
 
 # =====================
 # =====================
