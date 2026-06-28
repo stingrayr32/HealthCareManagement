@@ -38,8 +38,7 @@ def _get_sheet():
 
 
 @st.cache_data(ttl=300)
-def load_data(cache_bust: int = 0) -> pd.DataFrame:
-    """cache_bust を変えると必ずキャッシュをスキップして再フェッチする。"""
+def load_data() -> pd.DataFrame:
     sheet = _get_sheet()
     records = sheet.get_all_values()
 

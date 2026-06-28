@@ -152,9 +152,7 @@ with st.sidebar:
         format_func=lambda x: "全期間" if x == 0 else f"直近 {x} 日間",
     )
     if st.button("🔄 データを再読み込み"):
-        if "health_cache_bust" not in st.session_state:
-            st.session_state.health_cache_bust = 0
-        st.session_state.health_cache_bust += 1
+        load_data.clear()
         st.rerun()
 
     st.divider()
@@ -190,17 +188,41 @@ with tab_dashboard:
         st.session_state.parsed_data = None
     if "existing_row_index" not in st.session_state:
         st.session_state.existing_row_index = None
-    if "health_cache_bust" not in st.session_state:
-        st.session_state.health_cache_bust = 0
+    if "health_just_saved" not in st.session_state:
+        st.session_state.health_just_saved = None
     if st.session_state.save_success:
         st.toast("スプレッドシートに保存しました！", icon="✅")
         st.session_state.save_success = False
 
     try:
-        df = load_data(st.session_state.health_cache_bust)
+        df = load_data()
     except Exception as e:
         st.error(f"データの読み込みに失敗しました。\n\n詳細: {e}")
         df = None
+
+    # 保存直後はキャッシュが古い可能性があるため、session_state のデータを直接注入
+    if st.session_state.health_just_saved is not None and df is not None:
+        _saved = st.session_state.health_just_saved
+        _numeric = ["体重","体脂肪","歩数","総カロリー","総タンパク質","総脂質","総炭水化物","朝食Cal","昼食Cal","夕食Cal"]
+        _new = {}
+        for _col in ["日付","体重","体脂肪","運動の有無","歩数","総カロリー","総タンパク質","総脂質","総炭水化物","朝食Cal","昼食Cal","夕食Cal","食事内容","メモ"]:
+            _v = _saved.get(_col, "")
+            if _col == "日付":
+                _new[_col] = pd.to_datetime(_v, errors="coerce")
+            elif _col in _numeric:
+                try:
+                    _new[_col] = float(_v) if _v not in ("", None) else float("nan")
+                except Exception:
+                    _new[_col] = float("nan")
+            else:
+                _new[_col] = _v
+        _date_val = _new["日付"]
+        if pd.notna(_date_val):
+            df = pd.concat(
+                [df[df["日付"] != _date_val], pd.DataFrame([_new])],
+                ignore_index=True,
+            ).sort_values("日付").reset_index(drop=True)
+        st.session_state.health_just_saved = None
 
     if df is None or df.empty:
         st.warning("スプレッドシートにデータがありません。")
@@ -374,8 +396,9 @@ with tab_dashboard:
                                     update_row(existing_idx, row)
                                 else:
                                     append_row(row)
-                                # カウンターを上げてキャッシュキーを変え、必ず再フェッチさせる
-                                st.session_state.health_cache_bust += 1
+                                # 保存内容を session_state に保持してグラフに即時反映
+                                st.session_state.health_just_saved = row
+                                load_data.clear()
                                 st.session_state.parsed_data = None
                                 st.session_state.existing_row_index = None
                                 st.session_state.chat_messages = []
