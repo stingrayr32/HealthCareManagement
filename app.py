@@ -152,7 +152,9 @@ with st.sidebar:
         format_func=lambda x: "全期間" if x == 0 else f"直近 {x} 日間",
     )
     if st.button("🔄 データを再読み込み"):
-        load_data.clear()
+        if "health_cache_bust" not in st.session_state:
+            st.session_state.health_cache_bust = 0
+        st.session_state.health_cache_bust += 1
         st.rerun()
 
     st.divider()
@@ -188,12 +190,14 @@ with tab_dashboard:
         st.session_state.parsed_data = None
     if "existing_row_index" not in st.session_state:
         st.session_state.existing_row_index = None
+    if "health_cache_bust" not in st.session_state:
+        st.session_state.health_cache_bust = 0
     if st.session_state.save_success:
         st.toast("スプレッドシートに保存しました！", icon="✅")
         st.session_state.save_success = False
 
     try:
-        df = load_data()
+        df = load_data(st.session_state.health_cache_bust)
     except Exception as e:
         st.error(f"データの読み込みに失敗しました。\n\n詳細: {e}")
         df = None
@@ -370,8 +374,8 @@ with tab_dashboard:
                                     update_row(existing_idx, row)
                                 else:
                                     append_row(row)
-                                # 書き込み完了後にキャッシュを確実にクリア
-                                load_data.clear()
+                                # カウンターを上げてキャッシュキーを変え、必ず再フェッチさせる
+                                st.session_state.health_cache_bust += 1
                                 st.session_state.parsed_data = None
                                 st.session_state.existing_row_index = None
                                 st.session_state.chat_messages = []
