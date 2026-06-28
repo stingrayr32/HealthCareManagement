@@ -355,13 +355,22 @@ with tab_dashboard:
                 _dbg = st.session_state.health_debug
                 with st.expander("🔍 保存デバッグ情報（確認後に閉じてください）", expanded=True):
                     st.write(f"**操作:** {_dbg['op']}")
+                    if _dbg.get("before_rows") is not None:
+                        st.write(f"**書き込み前の行数:** {_dbg['before_rows']}")
+                        st.write(f"**書き込み後の行数:** {_dbg['after_rows']}")
+                        if _dbg["after_rows"] > _dbg["before_rows"]:
+                            st.success("✅ 行が追加されました（書き込み成功）")
+                        elif _dbg["op"].startswith("update"):
+                            st.info("ℹ️ update操作のため行数は変わりません")
+                        else:
+                            st.error("❌ 行数が増えていません（書き込み失敗の可能性）")
+                        st.write("**シートの最終行:**")
+                        st.write(_dbg.get("last_row_in_sheet", []))
                     st.write("**送信データ:**")
                     st.json(_dbg["row"])
                     if _dbg["error"]:
                         st.error("**書き込みエラー:**")
                         st.code(_dbg["error"])
-                    else:
-                        st.success("書き込み関数は正常終了しました")
                     if st.button("デバッグ情報を閉じる"):
                         st.session_state.health_debug = None
                         st.rerun()
@@ -398,8 +407,9 @@ with tab_dashboard:
                     with sv1:
                         if st.button("💾 スプレッドシートに保存", type="primary", use_container_width=True):
                             try:
+                                _raw_date = str(p.get("日付", "") or "").replace("-", "/")
                                 row = {
-                                    "日付": p.get("日付", ""), "体重": p.get("体重", ""),
+                                    "日付": _raw_date, "体重": p.get("体重", ""),
                                     "体脂肪": p.get("体脂肪", ""), "運動の有無": p.get("運動の有無", ""),
                                     "歩数": p.get("歩数", ""), "総カロリー": p.get("総カロリー", ""),
                                     "総タンパク質": p.get("総タンパク質", ""), "総脂質": p.get("総脂質", ""),
@@ -408,16 +418,29 @@ with tab_dashboard:
                                     "食事内容": p.get("食事内容", ""), "メモ": p.get("メモ", ""),
                                 }
                                 existing_idx = st.session_state.get("existing_row_index")
-                                import traceback
+                                import traceback, time
+                                from sheets_client import _get_sheet as _dbg_get_sheet
                                 try:
+                                    # 書き込み前の行数を記録
+                                    _before = len(_dbg_get_sheet().get_all_values())
                                     if existing_idx:
                                         update_row(existing_idx, row)
                                         _op = f"update_row(行={existing_idx})"
                                     else:
                                         append_row(row)
                                         _op = "append_row(新規)"
+                                    # 書き込み後に 1 秒待って再読み、行数変化を確認
+                                    time.sleep(1)
+                                    _after_rows = _dbg_get_sheet().get_all_values()
+                                    _after = len(_after_rows)
+                                    _last_row = _after_rows[-1] if _after_rows else []
                                     st.session_state.health_debug = {
-                                        "op": _op, "row": row, "error": None
+                                        "op": _op,
+                                        "row": row,
+                                        "error": None,
+                                        "before_rows": _before,
+                                        "after_rows": _after,
+                                        "last_row_in_sheet": _last_row,
                                     }
                                 except Exception as _we:
                                     st.session_state.health_debug = {
