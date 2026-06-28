@@ -152,7 +152,7 @@ with st.sidebar:
         format_func=lambda x: "全期間" if x == 0 else f"直近 {x} 日間",
     )
     if st.button("🔄 データを再読み込み"):
-        st.cache_data.clear()
+        load_data.clear()
         st.rerun()
 
     st.divider()
@@ -370,11 +370,12 @@ with tab_dashboard:
                                     update_row(existing_idx, row)
                                 else:
                                     append_row(row)
+                                # 書き込み完了後にキャッシュを確実にクリア
+                                load_data.clear()
                                 st.session_state.parsed_data = None
                                 st.session_state.existing_row_index = None
                                 st.session_state.chat_messages = []
                                 st.session_state.save_success = True
-                                st.cache_data.clear()
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"保存に失敗しました: {e}")
