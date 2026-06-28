@@ -733,6 +733,7 @@ with tab_tasks:
                 "end": row["終了時刻"] if has_time else "",
                 "has_time": has_time,
                 "color": row.get("色", "#1976d2"),
+                "backlog_id": row.get("バックログID", ""),
             })
 
     # Google Calendar → 終日リスト + 時刻付きカード用リスト
@@ -761,12 +762,17 @@ with tab_tasks:
             gcal_error = str(e)
 
     def _time_to_min(t: str) -> int:
-        """'HH:MM' を分数に変換。パース失敗や空文字は 9999（末尾）。"""
         try:
             h, m = t.split(":")
             return int(h) * 60 + int(m)
         except Exception:
             return 9999
+
+    def _on_sched_check(key: str, bl_id: str) -> None:
+        """スケジュールチェック時、紐付きバックログを完了に更新。"""
+        if st.session_state.get(key) and bl_id:
+            update_backlog_status(bl_id, "完了")
+            load_backlog.clear()
 
     all_events = sorted(
         local_events + gcal_timed,
@@ -844,7 +850,9 @@ with tab_tasks:
                     c_chk, c_card, c_btn = st.columns([1, 10, 1])
                     with c_chk:
                         st.markdown("<div style='padding-top:16px'>", unsafe_allow_html=True)
-                        st.checkbox("", key=done_key, label_visibility="collapsed")
+                        st.checkbox("", key=done_key, label_visibility="collapsed",
+                                    on_change=_on_sched_check,
+                                    args=(done_key, ev.get("backlog_id", "")))
                         st.markdown("</div>", unsafe_allow_html=True)
                     with c_card:
                         st.markdown(card_html, unsafe_allow_html=True)
